@@ -46,6 +46,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
           name: user.displayName || 'BETGURU Player',
           phone: user.phoneNumber || '+91 9876543210',
           email: user.email || '',
+          avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           balance: 100, // Welcome Bonus
           totalWon: 0,
           totalSpent: 0,
@@ -56,6 +57,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
           role: 'user'
         };
         await setDoc(userRef, newUserDoc);
+      } else {
+        if (user.photoURL) {
+          await setDoc(userRef, { avatarUrl: user.photoURL }, { merge: true });
+        }
       }
 
       soundFx.playCoin();

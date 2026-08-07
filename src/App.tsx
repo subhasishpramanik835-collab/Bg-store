@@ -70,7 +70,8 @@ export default function App() {
             setUser({
               ...data,
               id: fbUser.uid,
-              email: fbUser.email || data.email
+              email: fbUser.email || data.email,
+              avatarUrl: fbUser.photoURL || data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
             });
           } else {
             const newUserDoc: User = {
@@ -215,6 +216,24 @@ export default function App() {
 
     return () => clearInterval(timer);
   }, [draws, tickets, user.id]);
+
+  // Auto-dismiss non-critical informational notifications after 5 seconds
+  useEffect(() => {
+    const autoDismissTimer = setInterval(() => {
+      const now = Date.now();
+      setNotifications((prev) =>
+        prev.filter((ntf) => {
+          if (ntf.type === 'system' && !ntf.isCritical) {
+            const age = now - (ntf.createdAt || now);
+            return age < 5000;
+          }
+          return true;
+        })
+      );
+    }, 1000);
+
+    return () => clearInterval(autoDismissTimer);
+  }, []);
 
   // Handle Deposit Submission
   const handleDepositSubmit = (amount: number, method: PaymentMethodType, utr: string, screenshotUrl: string) => {
@@ -512,7 +531,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-500 selection:text-slate-950 flex flex-col antialiased">
+    <div className="min-h-screen gold-bg-hd text-slate-100 font-sans selection:bg-amber-500 selection:text-slate-950 flex flex-col antialiased relative overflow-x-hidden">
+      
+      {/* Premium HD Gold Ambient Background Lighting */}
+      <div className="fixed -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-b from-amber-500/15 via-yellow-500/10 to-transparent rounded-full blur-3xl pointer-events-none -z-10"></div>
+      <div className="fixed top-1/2 -left-32 w-[400px] h-[400px] bg-amber-600/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+      <div className="fixed bottom-10 -right-32 w-[450px] h-[450px] bg-yellow-500/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
       
       {/* Top Header */}
       <Header
@@ -520,11 +544,10 @@ export default function App() {
         unreadNotificationsCount={unreadNotificationsCount}
         onOpenDeposit={() => setIsDepositOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
-        isAdmin={isAdminMode}
-        onToggleAdmin={() => setIsAdminMode(!isAdminMode)}
         onOpenProfile={() => setActiveTab('profile')}
         muted={isMuted}
         onToggleMute={handleToggleMute}
+        user={user}
       />
 
       {/* Live Winners Horizontal Marquee */}
@@ -687,6 +710,7 @@ export default function App() {
                 onOpenWithdraw={() => setIsWithdrawOpen(true)}
                 onLogout={handleLogout}
                 onClaimVipBonus={handleClaimVipBonus}
+                onOpenAdmin={() => setIsAdminMode(true)}
               />
             )}
           </>
@@ -757,6 +781,12 @@ export default function App() {
         notifications={notifications}
         onMarkAllRead={() => {
           setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        }}
+        onClearAll={() => {
+          setNotifications([]);
+        }}
+        onRemoveNotification={(id) => {
+          setNotifications((prev) => prev.filter((n) => n.id !== id));
         }}
       />
 

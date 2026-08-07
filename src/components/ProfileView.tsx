@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap } from 'lucide-react';
+import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap, Shield } from 'lucide-react';
 import { User, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
 import { WalletLedger } from './WalletLedger';
@@ -16,6 +16,7 @@ interface ProfileViewProps {
   onOpenWithdraw: () => void;
   onLogout?: () => void;
   onClaimVipBonus?: (bonusAmount: number) => void;
+  onOpenAdmin?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -27,14 +28,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenDeposit,
   onOpenWithdraw,
   onLogout,
-  onClaimVipBonus
+  onClaimVipBonus,
+  onOpenAdmin
 }) => {
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'deposits' | 'withdrawals' | 'tickets' | 'ledger'>('ledger');
   const [ticketFilter, setTicketFilter] = useState<'all' | 'win' | 'loss'>('all');
   const [hasClaimedWeeklyBonus, setHasClaimedWeeklyBonus] = useState<boolean>(false);
+  const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
 
+  const isAdminUser = user.email?.toLowerCase() === 'asishp92@gmail.com' || user.role === 'admin';
   const vipPts = user.vipPoints || (user.totalSpent ? Math.floor(user.totalSpent / 10) : 120);
   const currentLevel = calculateVipLevel(vipPts);
   const currentTierInfo = VIP_TIERS[currentLevel];
@@ -80,33 +84,57 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-24">
       
       {/* Top Profile Hero Card */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-amber-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+      <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-amber-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden">
         
+        {/* VIP Badge fixed in Top Right Corner */}
+        <div className="absolute top-3 right-3 sm:top-4 sm:right-5 z-20 flex items-center gap-1.5">
+          <div className={`px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-2xl flex items-center gap-1.5 font-mono text-xs font-black shadow-xl border backdrop-blur-md transition-all hover:scale-105 ${currentTierInfo.badgeBg}`}>
+            <Crown className="w-4 h-4 text-amber-300 animate-pulse" />
+            <span className="uppercase tracking-wider font-extrabold">{currentLevel} VIP</span>
+          </div>
+        </div>
+
         {/* Ambient Gold Glow */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10 pt-2 sm:pt-0">
           
           {/* Avatar & User Details */}
           <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="relative">
+            <div 
+              onClick={() => {
+                soundFx.playClick();
+                setShowPhotoModal(true);
+              }}
+              className="relative group cursor-pointer"
+              title="Click to view profile photo"
+            >
               <img
                 src={user.avatarUrl}
                 alt={user.name}
-                className="w-20 h-20 rounded-2xl object-cover border-2 border-amber-400 shadow-xl shadow-amber-500/20"
+                className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl object-cover border-2 border-amber-400 shadow-xl shadow-amber-500/20 group-hover:scale-105 group-hover:border-amber-300 transition-all duration-300"
               />
-              <span className={`absolute -bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-md border ${currentTierInfo.badgeBg}`}>
-                👑 {currentLevel}
+              <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-amber-300 font-extrabold text-[10px] font-mono">
+                VIEW PHOTO
+              </div>
+              <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-md border bg-slate-900 text-amber-400 border-amber-500/40">
+                PROFILE
               </span>
             </div>
 
             <div className="space-y-1">
-              <div className="flex items-center justify-center sm:justify-start gap-2">
-                <h2 className="text-xl font-black text-white font-mono">{user.name}</h2>
+              <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                <h2 className="text-xl sm:text-2xl font-black text-white font-mono">{user.name}</h2>
                 <span className="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1 font-mono">
                   <Award className="w-3 h-3 text-amber-400" />
                   <span>{vipPts.toLocaleString()} VIP PTS</span>
                 </span>
+                {isAdminUser && (
+                  <span className="bg-rose-500/20 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-rose-500/40 flex items-center gap-1 font-mono uppercase">
+                    <Shield className="w-3 h-3" />
+                    <span>ADMIN</span>
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-mono">
@@ -135,7 +163,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </span>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={() => { soundFx.playClick(); onOpenDeposit(); }}
                 className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 hover:from-emerald-400 transition-all flex items-center justify-center gap-1.5"
@@ -151,6 +179,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <ArrowUpRight className="w-4 h-4" />
                 <span>WITHDRAW</span>
               </button>
+
+              {isAdminUser && onOpenAdmin && (
+                <button
+                  onClick={() => { soundFx.playClick(); onOpenAdmin(); }}
+                  className="flex-1 sm:flex-initial px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5"
+                  title="Open Admin Dashboard"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span>ADMIN PANEL</span>
+                </button>
+              )}
 
               {onLogout && (
                 <button
@@ -436,6 +475,62 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         )}
 
       </div>
+
+      {/* Profile Photo Enlarge Modal */}
+      {showPhotoModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative flex flex-col items-center text-center space-y-4">
+            
+            {/* Top Right VIP Badge on Modal */}
+            <div className="absolute top-4 right-4">
+              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md border ${currentTierInfo.badgeBg}`}>
+                👑 {currentLevel} VIP
+              </span>
+            </div>
+
+            {/* Close Modal Button */}
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setShowPhotoModal(false);
+              }}
+              className="absolute top-4 left-4 p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            >
+              <XCircle className="w-6 h-6" />
+            </button>
+
+            <h3 className="text-lg font-black text-amber-300 font-mono tracking-wide pt-2">
+              USER PROFILE PHOTO
+            </h3>
+
+            {/* High Definition Avatar Image Frame */}
+            <div className="relative p-1 rounded-3xl bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-600 shadow-2xl shadow-amber-500/30">
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className="w-48 h-48 sm:w-56 sm:h-56 rounded-[22px] object-cover shadow-inner"
+              />
+            </div>
+
+            {/* User Meta Summary */}
+            <div className="space-y-1 font-mono">
+              <h4 className="text-xl font-extrabold text-white">{user.name}</h4>
+              <p className="text-xs text-amber-400/90 font-semibold">{user.email}</p>
+              <p className="text-[11px] text-slate-400">Account ID: {user.id}</p>
+            </div>
+
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setShowPhotoModal(false);
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all font-mono"
+            >
+              CLOSE PREVIEW
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

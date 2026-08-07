@@ -104,6 +104,8 @@ export interface NotificationItem {
   type: 'deposit' | 'withdrawal' | 'win' | 'loss' | 'system';
   date: string;
   read: boolean;
+  createdAt?: number;
+  isCritical?: boolean;
 }
 
 export interface AdminStats {
