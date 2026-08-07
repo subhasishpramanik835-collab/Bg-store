@@ -108,10 +108,10 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Side: Wallet Balance + Plus Deposit + Bell with Integrated Sound Toggle */}
+        {/* Right Side: Wallet Balance + Plus Deposit + Bell */}
         <div className="flex items-center gap-2 sm:gap-3">
           
-          {/* Dual Wallet Badge (Main Wallet + Bonus Wallet) with Green Flash animation */}
+          {/* Integrated Wallet Badge (Balance + Plus Deposit Button) */}
           <div 
             onClick={onOpenDeposit}
             className={`flex items-center bg-slate-900/90 border rounded-2xl p-1 sm:p-1.5 cursor-pointer shadow-lg transition-all group ${
@@ -130,14 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               <div className="flex flex-col text-left">
-                <div className="flex items-center gap-1">
-                  <span className="text-[8px] text-slate-400 uppercase tracking-wider font-bold leading-none">MAIN</span>
-                  {bonusBalance > 0 && (
-                    <span className="text-[8px] text-purple-300 font-mono bg-purple-950/60 px-1 rounded border border-purple-800/40">
-                      +₹{bonusBalance} BONUS
-                    </span>
-                  )}
-                </div>
+                <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold leading-none">WALLET</span>
                 <span className={`text-xs sm:text-sm font-black font-mono tracking-tight leading-tight transition-colors ${
                   isFlashingGreen ? 'text-emerald-300 scale-105' : 'text-amber-300'
                 }`}>
@@ -153,14 +146,14 @@ export const Header: React.FC<HeaderProps> = ({
                 soundFx.playClick();
                 onOpenDeposit();
               }}
-              className="ml-1 px-2 sm:px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl golden-shadow-btn flex items-center gap-1 transition-all active:scale-95 shrink-0 relative overflow-hidden"
+              className="ml-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl golden-shadow-btn flex items-center gap-1 transition-all active:scale-95 shrink-0 relative overflow-hidden"
               title="Add Money / Deposit"
             >
               <div className="relative flex items-center justify-center">
                 <Plus className="w-3.5 h-3.5 stroke-[3] animate-pulse" />
                 <span className="absolute -inset-1 rounded-full bg-emerald-400/50 animate-ping pointer-events-none"></span>
               </div>
-              <span className="hidden xs:inline font-mono">DEPOSIT</span>
+              <span className="hidden xs:inline font-mono font-black">DEPOSIT</span>
             </button>
           </div>
 

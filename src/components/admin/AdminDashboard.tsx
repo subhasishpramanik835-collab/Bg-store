@@ -19,6 +19,7 @@ interface AdminDashboardProps {
   onUpdateUserBalance: (newBalance: number) => void;
   onUpdateUserBonusBalance?: (newBonusBalance: number) => void;
   onToggleUserStatus: () => void;
+  onAddTransaction?: (tx: WalletTransaction) => void;
 }
 
 const ANALYTICS_DATA = [
@@ -45,14 +46,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onTriggerDrawResult,
   onUpdateUserBalance,
   onUpdateUserBonusBalance,
-  onToggleUserStatus
+  onToggleUserStatus,
+  onAddTransaction
 }) => {
-  const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'audit'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'wallet' | 'audit'>('overview');
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [manualDigits, setManualDigits] = useState<{ [drawId: string]: string }>({});
   const [userSearchTerm, setUserSearchTerm] = useState<string>('');
   const [editingBalance, setEditingBalance] = useState<string>(user.balance.toString());
   const [editingBonusBalance, setEditingBonusBalance] = useState<string>((user.bonusBalance || 100).toString());
+  const [auditNote, setAuditNote] = useState<string>('Manual Admin Adjustment');
+
+  // Helper for recording Wallet Audit Transactions
+  const logAuditTx = (walletType: 'Main' | 'Bonus', changeType: 'set' | 'add' | 'deduct', amount: number, newTotal: number, note?: string) => {
+    if (!onAddTransaction) return;
+    let desc = '';
+    let txType: WalletTransaction['type'] = 'admin_bonus';
+    if (changeType === 'set') {
+      desc = `[Admin Wallet Audit] ${walletType.toUpperCase()} WALLET set to ₹${newTotal.toLocaleString('en-IN')}`;
+      txType = 'admin_bonus';
+    } else if (changeType === 'add') {
+      desc = `[Admin Wallet Audit] ${walletType.toUpperCase()} WALLET Credited +₹${amount.toLocaleString('en-IN')}`;
+      txType = 'admin_bonus';
+    } else {
+      desc = `[Admin Wallet Audit] ${walletType.toUpperCase()} WALLET Deducted -₹${amount.toLocaleString('en-IN')}`;
+      txType = 'admin_deduction';
+    }
+    if (note && note.trim().length > 0) {
+      desc += ` | Reason: ${note.trim()}`;
+    }
+
+    onAddTransaction({
+      id: `TX-ADM-${Date.now()}`,
+      userId: user.id,
+      type: txType,
+      amount: changeType === 'deduct' ? -amount : amount,
+      description: desc,
+      status: 'completed',
+      date: new Date().toLocaleString('en-IN')
+    });
+  };
 
   // Role-Based Access Control (RBAC) Guard
   const isAdmin = user.role === 'admin' || user.email === 'subhasishpramanik835@gmail.com' || true; // Allow access for app owner/admin mode
@@ -123,8 +156,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle },
           { id: 'withdrawals', label: 'Withdrawal Requests', count: pendingWithdrawalsCount, icon: ArrowUpCircle },
           { id: 'draws', label: 'Draws & Winners', icon: Trophy },
-          { id: 'users', label: 'User Management', icon: Users },
-          { id: 'audit', label: 'System Logs', icon: FileText }
+          { id: 'users', label: 'User Directory', icon: Users },
+          { id: 'wallet', label: 'Wallet Manager', icon: Wallet },
+          { id: 'audit', label: 'System Audit Logs', icon: FileText }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = adminTab === tab.id;
@@ -483,6 +517,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const parsed = parseFloat(editingBalance);
                         if (!isNaN(parsed)) {
                           onUpdateUserBalance(parsed);
+                          logAuditTx('Main', 'set', 0, parsed, auditNote);
                           soundFx.playCoin();
                         }
                       }}
@@ -496,7 +531,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (amt) {
                           const val = parseFloat(amt);
                           if (!isNaN(val) && val > 0) {
-                            onUpdateUserBalance(user.balance + val);
+                            const newBal = user.balance + val;
+                            onUpdateUserBalance(newBal);
+                            logAuditTx('Main', 'add', val, newBal, 'User Directory Credit');
                             soundFx.playCoin();
                           }
                         }
@@ -511,7 +548,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (amt) {
                           const val = parseFloat(amt);
                           if (!isNaN(val) && val > 0) {
-                            onUpdateUserBalance(Math.max(0, user.balance - val));
+                            const newBal = Math.max(0, user.balance - val);
+                            onUpdateUserBalance(newBal);
+                            logAuditTx('Main', 'deduct', val, newBal, 'User Directory Debit');
                             soundFx.playClick();
                           }
                         }
@@ -543,6 +582,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const parsed = parseFloat(editingBonusBalance);
                         if (!isNaN(parsed) && onUpdateUserBonusBalance) {
                           onUpdateUserBonusBalance(parsed);
+                          logAuditTx('Bonus', 'set', 0, parsed, auditNote);
                           soundFx.playCoin();
                         }
                       }}
@@ -556,7 +596,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (amt) {
                           const val = parseFloat(amt);
                           if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
-                            onUpdateUserBonusBalance((user.bonusBalance || 0) + val);
+                            const newBonus = (user.bonusBalance || 0) + val;
+                            onUpdateUserBonusBalance(newBonus);
+                            logAuditTx('Bonus', 'add', val, newBonus, 'User Directory Bonus Credit');
                             soundFx.playCoin();
                           }
                         }
@@ -571,7 +613,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (amt) {
                           const val = parseFloat(amt);
                           if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
-                            onUpdateUserBonusBalance(Math.max(0, (user.bonusBalance || 0) - val));
+                            const newBonus = Math.max(0, (user.bonusBalance || 0) - val);
+                            onUpdateUserBonusBalance(newBonus);
+                            logAuditTx('Bonus', 'deduct', val, newBonus, 'User Directory Bonus Debit');
                             soundFx.playClick();
                           }
                         }
@@ -598,6 +642,272 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5.5: DEDICATED WALLET MANAGER INTERFACE WITH AUDIT TRAIL */}
+      {adminTab === 'wallet' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black text-white font-mono flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-amber-400" />
+                <span>Admin Wallet Manager & Ledger Override</span>
+              </h2>
+              <p className="text-xs text-slate-400 font-mono">
+                Adjust player main and bonus wallet balances with automatic audit trail recording in the system transactions ledger.
+              </p>
+            </div>
+          </div>
+
+          {/* Player Selection Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-5">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-slate-950 rounded-2xl border border-amber-500/30">
+              <div className="flex items-center gap-3">
+                <img src={user.avatarUrl} alt={user.name} className="w-14 h-14 rounded-2xl object-cover border-2 border-amber-400" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-white font-mono">{user.name}</h3>
+                    <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase font-mono">
+                      👑 VIP {user.vipLevel || 'Gold'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">Player ID: <span className="text-amber-300 font-bold">{user.id}</span> | Phone: {user.phone}</p>
+                </div>
+              </div>
+
+              {/* Current Balances Summary */}
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                  <span className="text-[9px] text-amber-400 uppercase font-black tracking-wider block">MAIN WALLET</span>
+                  <span className="text-lg font-black text-amber-300 font-mono">₹{user.balance.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-purple-800/60 rounded-xl text-center">
+                  <span className="text-[9px] text-purple-300 uppercase font-black tracking-wider block">BONUS WALLET</span>
+                  <span className="text-lg font-black text-purple-200 font-mono">₹{(user.bonusBalance || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Note Input */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <label className="text-xs font-mono font-bold text-slate-300 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Adjustment Reason / Audit Trail Note:</span>
+              </label>
+              <input
+                type="text"
+                value={auditNote}
+                onChange={(e) => setAuditNote(e.target.value)}
+                placeholder="e.g. Weekly VIP Cashback Bonus, Promotional Credit, Manual Dispute Resolution..."
+                className="w-full bg-slate-900 border border-slate-700 text-amber-200 text-xs font-mono rounded-xl px-3.5 py-2.5 outline-none focus:border-amber-400"
+              />
+            </div>
+
+            {/* Wallet Action Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Main Wallet Control Box */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-amber-500/30 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <span className="text-sm font-black text-amber-400 font-mono flex items-center gap-2">
+                    <Wallet className="w-4 h-4" /> MAIN WALLET CONTROLS
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">Current: ₹{user.balance.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Set Exact Main Balance */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={editingBalance}
+                      onChange={(e) => setEditingBalance(e.target.value)}
+                      placeholder="New exact balance"
+                      className="flex-1 bg-slate-900 border border-slate-700 text-amber-300 text-sm font-bold font-mono px-3 py-2 rounded-xl outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        const parsed = parseFloat(editingBalance);
+                        if (!isNaN(parsed)) {
+                          onUpdateUserBalance(parsed);
+                          logAuditTx('Main', 'set', 0, parsed, auditNote);
+                          soundFx.playCoin();
+                        }
+                      }}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs font-mono rounded-xl transition-all shadow-md active:scale-95"
+                    >
+                      Override Balance
+                    </button>
+                  </div>
+
+                  {/* Quick Add / Deduct Buttons */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to ADD to Main Wallet (₹):', '500');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0) {
+                            const newBal = user.balance + val;
+                            onUpdateUserBalance(newBal);
+                            logAuditTx('Main', 'add', val, newBal, auditNote);
+                            soundFx.playCoin();
+                          }
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-black text-xs font-mono rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Credit Main (+₹)</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to DEDUCT from Main Wallet (₹):', '200');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0) {
+                            const newBal = Math.max(0, user.balance - val);
+                            onUpdateUserBalance(newBal);
+                            logAuditTx('Main', 'deduct', val, newBal, auditNote);
+                            soundFx.playClick();
+                          }
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-black text-xs font-mono rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Debit Main (-₹)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bonus Wallet Control Box */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-purple-800/50 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <span className="text-sm font-black text-purple-300 font-mono flex items-center gap-2">
+                    <Gift className="w-4 h-4 text-purple-400" /> BONUS WALLET CONTROLS
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">Current: ₹{(user.bonusBalance || 0).toLocaleString('en-IN')}</span>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Set Exact Bonus Balance */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={editingBonusBalance}
+                      onChange={(e) => setEditingBonusBalance(e.target.value)}
+                      placeholder="New exact bonus"
+                      className="flex-1 bg-slate-900 border border-purple-800/60 text-purple-300 text-sm font-bold font-mono px-3 py-2 rounded-xl outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        const parsed = parseFloat(editingBonusBalance);
+                        if (!isNaN(parsed) && onUpdateUserBonusBalance) {
+                          onUpdateUserBonusBalance(parsed);
+                          logAuditTx('Bonus', 'set', 0, parsed, auditNote);
+                          soundFx.playCoin();
+                        }
+                      }}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs font-mono rounded-xl transition-all shadow-md active:scale-95"
+                    >
+                      Override Bonus
+                    </button>
+                  </div>
+
+                  {/* Quick Add / Deduct Bonus Buttons */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to ADD to Bonus Wallet (₹):', '200');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
+                            const newBonus = (user.bonusBalance || 0) + val;
+                            onUpdateUserBonusBalance(newBonus);
+                            logAuditTx('Bonus', 'add', val, newBonus, auditNote);
+                            soundFx.playCoin();
+                          }
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 font-black text-xs font-mono rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Credit Bonus (+₹)</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to DEDUCT from Bonus Wallet (₹):', '100');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
+                            const newBonus = Math.max(0, (user.bonusBalance || 0) - val);
+                            onUpdateUserBonusBalance(newBonus);
+                            logAuditTx('Bonus', 'deduct', val, newBonus, auditNote);
+                            soundFx.playClick();
+                          }
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-black text-xs font-mono rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Debit Bonus (-₹)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Audit Trail Transactions History Table */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-3 font-mono text-xs">
+            <h3 className="text-sm font-extrabold text-white flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Admin Wallet Adjustment Audit Trail</span>
+              </span>
+              <span className="text-xs text-slate-400 font-normal">
+                Recorded in Ledger ({transactions.filter(t => t.type === 'admin_bonus' || t.type === 'admin_deduction' || t.description.includes('Admin')).length} logs)
+              </span>
+            </h3>
+
+            <div className="space-y-2">
+              {transactions.filter(t => t.type === 'admin_bonus' || t.type === 'admin_deduction' || t.description.includes('Admin')).length === 0 ? (
+                <div className="p-6 bg-slate-950 rounded-2xl border border-slate-800 text-center text-slate-500 font-bold">
+                  No admin wallet override logs recorded yet. Adjust balances above to create audit entries.
+                </div>
+              ) : (
+                transactions
+                  .filter(t => t.type === 'admin_bonus' || t.type === 'admin_deduction' || t.description.includes('Admin'))
+                  .map((tx) => (
+                    <div key={tx.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-slate-300">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 font-extrabold px-2 py-0.5 rounded border border-amber-500/30">
+                            {tx.id}
+                          </span>
+                          <span className="text-[10px] text-slate-400">{tx.date}</span>
+                        </div>
+                        <p className="font-bold text-white text-xs">{tx.description}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`text-sm font-black font-mono ${tx.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {tx.amount >= 0 ? `+₹${Math.abs(tx.amount).toLocaleString('en-IN')}` : `-₹${Math.abs(tx.amount).toLocaleString('en-IN')}`}
+                        </span>
+                        <span className="text-[9px] bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800 block mt-0.5">
+                          AUDIT RECORDED
+                        </span>
+                      </div>
+                    </div>
+                  ))
+              )}
             </div>
           </div>
         </div>

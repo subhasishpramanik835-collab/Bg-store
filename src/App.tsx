@@ -581,6 +581,9 @@ export default function App() {
             onToggleUserStatus={() => {
               setUser((prev) => ({ ...prev, status: prev.status === 'active' ? 'suspended' : 'active' }));
             }}
+            onAddTransaction={(tx) => {
+              setTransactions((prev) => [tx, ...prev]);
+            }}
           />
         ) : (
           <>

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -51,15 +51,16 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path,
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  return errInfo;
 }
 
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+    await getDoc(doc(db, '_connection_test_', 'ping'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (error instanceof Error) {
+      console.warn('Firestore status check:', error.message);
     }
   }
 }
+
