@@ -17,6 +17,7 @@ interface AdminDashboardProps {
   onRejectWithdrawal: (withdrawalId: string, reason: string) => void;
   onTriggerDrawResult: (drawId: string, winningNumbers: number[]) => void;
   onUpdateUserBalance: (newBalance: number) => void;
+  onUpdateUserBonusBalance?: (newBonusBalance: number) => void;
   onToggleUserStatus: () => void;
 }
 
@@ -43,6 +44,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRejectWithdrawal,
   onTriggerDrawResult,
   onUpdateUserBalance,
+  onUpdateUserBonusBalance,
   onToggleUserStatus
 }) => {
   const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'audit'>('overview');
@@ -50,6 +52,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [manualDigits, setManualDigits] = useState<{ [drawId: string]: string }>({});
   const [userSearchTerm, setUserSearchTerm] = useState<string>('');
   const [editingBalance, setEditingBalance] = useState<string>(user.balance.toString());
+  const [editingBonusBalance, setEditingBonusBalance] = useState<string>((user.bonusBalance || 100).toString());
 
   // Role-Based Access Control (RBAC) Guard
   const isAdmin = user.role === 'admin' || user.email === 'subhasishpramanik835@gmail.com' || true; // Allow access for app owner/admin mode
@@ -458,56 +461,142 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Wallet & VIP Tier Adjustment Panel */}
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-xs">
-                  <span className="text-slate-400">₹</span>
-                  <input
-                    type="number"
-                    value={editingBalance}
-                    onChange={(e) => setEditingBalance(e.target.value)}
-                    className="w-24 bg-transparent font-bold text-amber-300 outline-none"
-                  />
+              <div className="flex flex-col gap-3 w-full sm:w-auto">
+                
+                {/* Main Wallet Management Box */}
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-amber-400 font-bold flex items-center gap-1">
+                      <Wallet className="w-3.5 h-3.5" /> MAIN WALLET
+                    </span>
+                    <span className="text-white font-black">₹{user.balance.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-xs">
+                    <input
+                      type="number"
+                      value={editingBalance}
+                      onChange={(e) => setEditingBalance(e.target.value)}
+                      className="w-24 bg-slate-950 border border-slate-700 px-2.5 py-1 rounded-xl font-bold text-amber-300 outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        const parsed = parseFloat(editingBalance);
+                        if (!isNaN(parsed)) {
+                          onUpdateUserBalance(parsed);
+                          soundFx.playCoin();
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-400 font-bold text-[10px]"
+                    >
+                      Set Main
+                    </button>
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to ADD to Main Wallet (₹):', '500');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0) {
+                            onUpdateUserBalance(user.balance + val);
+                            soundFx.playCoin();
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to DEDUCT from Main Wallet (₹):', '200');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0) {
+                            onUpdateUserBalance(Math.max(0, user.balance - val));
+                            soundFx.playClick();
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
+                    >
+                      - Deduct
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bonus Wallet Management Box */}
+                <div className="bg-slate-900 border border-purple-900/40 p-3 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-purple-300 font-bold flex items-center gap-1">
+                      <Gift className="w-3.5 h-3.5 text-purple-400" /> BONUS WALLET
+                    </span>
+                    <span className="text-purple-200 font-black">₹{(user.bonusBalance || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-xs">
+                    <input
+                      type="number"
+                      value={editingBonusBalance}
+                      onChange={(e) => setEditingBonusBalance(e.target.value)}
+                      className="w-24 bg-slate-950 border border-purple-800/60 px-2.5 py-1 rounded-xl font-bold text-purple-300 outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        const parsed = parseFloat(editingBonusBalance);
+                        if (!isNaN(parsed) && onUpdateUserBonusBalance) {
+                          onUpdateUserBonusBalance(parsed);
+                          soundFx.playCoin();
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-purple-600 text-white rounded-xl hover:bg-purple-500 font-bold text-[10px]"
+                    >
+                      Set Bonus
+                    </button>
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to ADD to Bonus Wallet (₹):', '200');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
+                            onUpdateUserBonusBalance((user.bonusBalance || 0) + val);
+                            soundFx.playCoin();
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
+                    >
+                      + Add
+                    </button>
+                    <button
+                      onClick={() => {
+                        const amt = prompt('Enter amount to DEDUCT from Bonus Wallet (₹):', '100');
+                        if (amt) {
+                          const val = parseFloat(amt);
+                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
+                            onUpdateUserBonusBalance(Math.max(0, (user.bonusBalance || 0) - val));
+                            soundFx.playClick();
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
+                    >
+                      - Deduct
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      const parsed = parseFloat(editingBalance);
-                      if (!isNaN(parsed)) onUpdateUserBalance(parsed);
-                    }}
-                    className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-400 font-bold text-[10px]"
+                    onClick={onToggleUserStatus}
+                    className={`flex-1 px-3 py-2 rounded-xl text-xs font-bold font-mono flex items-center justify-center gap-1 border ${
+                      user.status === 'active'
+                        ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
+                        : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
+                    }`}
                   >
-                    Save
+                    {user.status === 'active' ? <Ban className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                    <span>{user.status === 'active' ? 'Suspend Account' : 'Activate Account'}</span>
                   </button>
                 </div>
 
-                {/* VIP Bonus Grant Button */}
-                <button
-                  onClick={() => {
-                    const bonus = prompt('Enter VIP Bonus Amount in ₹ to credit user wallet:', '500');
-                    if (bonus) {
-                      const amt = parseFloat(bonus);
-                      if (!isNaN(amt) && amt > 0) {
-                        onUpdateUserBalance(user.balance + amt);
-                        soundFx.playCoin();
-                        alert(`Successfully credited ₹${amt} VIP Bonus to ${user.name}!`);
-                      }
-                    }
-                  }}
-                  className="px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs font-mono rounded-xl shadow hover:from-amber-400 transition-all flex items-center gap-1"
-                >
-                  <Award className="w-3.5 h-3.5" />
-                  <span>Grant VIP Bonus</span>
-                </button>
-
-                <button
-                  onClick={onToggleUserStatus}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold font-mono flex items-center gap-1 border ${
-                    user.status === 'active'
-                      ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
-                      : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
-                  }`}
-                >
-                  {user.status === 'active' ? <Ban className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                  <span>{user.status === 'active' ? 'Suspend User' : 'Activate User'}</span>
-                </button>
               </div>
             </div>
           </div>

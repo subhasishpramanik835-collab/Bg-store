@@ -575,6 +575,9 @@ export default function App() {
             onUpdateUserBalance={(newBalance) => {
               setUser((prev) => ({ ...prev, balance: newBalance }));
             }}
+            onUpdateUserBonusBalance={(newBonus) => {
+              setUser((prev) => ({ ...prev, bonusBalance: newBonus }));
+            }}
             onToggleUserStatus={() => {
               setUser((prev) => ({ ...prev, status: prev.status === 'active' ? 'suspended' : 'active' }));
             }}

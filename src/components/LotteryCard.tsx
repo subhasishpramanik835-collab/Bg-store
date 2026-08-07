@@ -31,7 +31,7 @@ export const LotteryCard: React.FC<LotteryCardProps> = ({ draw, onBuyTicket }) =
   const pad = (n: number) => n.toString().padStart(2, '0');
 
   return (
-    <div className="relative group bg-slate-900/90 border border-amber-500/30 hover:border-amber-400 rounded-3xl p-5 shadow-xl shadow-black/60 transition-all duration-300 hover:scale-[1.01] overflow-hidden flex flex-col justify-between">
+    <div className="relative group bg-slate-900/90 border border-amber-500/30 hover:border-amber-400 rounded-3xl p-5 shadow-xl shadow-black/60 transition-all duration-300 hover:scale-[1.01] overflow-hidden flex flex-col justify-between rainbow-shadow-glow">
       
       {/* Top Banner Accent */}
       <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${draw.bannerGradient}`}></div>
@@ -102,7 +102,7 @@ export const LotteryCard: React.FC<LotteryCardProps> = ({ draw, onBuyTicket }) =
             soundFx.playClick();
             onBuyTicket(draw);
           }}
-          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl golden-shadow-btn flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
         >
           <Ticket className="w-4 h-4" />
           <span>BUY TICKET</span>

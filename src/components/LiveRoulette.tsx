@@ -197,10 +197,10 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
         id: `TX-BET-${Date.now()}`,
         userId: user.id,
         type: 'roulette_bet',
-        amount: betTotal,
+        amount: -betTotal,
         description: `Bets placed on Live Roulette Round #${roundId}`,
         status: 'completed',
-        date: new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN')
+        date: new Date().toLocaleString('en-IN')
       });
       setLastBets(currentPlacedBets);
     }
@@ -343,7 +343,7 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
               amount: totalWin,
               description: `Won ₹${totalWin} on Live Roulette Round #${roundId} (Number ${targetWinNum})`,
               status: 'completed',
-              date: new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN')
+              date: new Date().toLocaleString('en-IN')
             });
 
             announceVoice(`Winning number ${targetWinNum}, ${colorText}${parityText}! Congratulations, you won Rupees ${totalWin}!`);

@@ -9,6 +9,7 @@ export interface User {
   email: string;
   phone: string;
   balance: number;
+  bonusBalance?: number;
   avatarUrl: string;
   regDate: string;
   vipLevel: 'Bronze' | 'Silver' | 'Gold' | 'VIP Platinum';
@@ -25,7 +26,7 @@ export interface User {
 export interface WalletTransaction {
   id: string;
   userId: string;
-  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'roulette_bet' | 'roulette_win' | 'vip_bonus';
+  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win';
   amount: number;
   description: string;
   status: 'completed' | 'pending' | 'failed' | 'rejected';

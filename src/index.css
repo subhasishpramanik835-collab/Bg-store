@@ -60,3 +60,78 @@
   background-attachment: fixed;
 }
 
+/* Round Rainbow Shadow Animation */
+@keyframes rainbow-shadow-anim {
+  0% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4), 0 0 35px rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.6);
+  }
+  20% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.4), 0 0 35px rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.6);
+  }
+  40% {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.4), 0 0 35px rgba(6, 182, 212, 0.2);
+    border-color: rgba(6, 182, 212, 0.6);
+  }
+  60% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 35px rgba(168, 85, 247, 0.2);
+    border-color: rgba(168, 85, 247, 0.6);
+  }
+  80% {
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.4), 0 0 35px rgba(244, 63, 94, 0.2);
+    border-color: rgba(244, 63, 94, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4), 0 0 35px rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.6);
+  }
+}
+
+.rainbow-shadow-glow {
+  animation: rainbow-shadow-anim 5s linear infinite;
+}
+
+.golden-shadow-btn {
+  box-shadow: 0 4px 20px -2px rgba(245, 158, 11, 0.35);
+  transition: all 0.2s ease-in-out;
+}
+
+.golden-shadow-btn:hover {
+  box-shadow: 0 6px 28px 0px rgba(245, 158, 11, 0.55);
+  transform: translateY(-1px);
+}
+
+/* Red Signal Zoom In / Zoom Out Animation for Loss */
+@keyframes pulse-zoom-red-anim {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.3);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 22px rgba(244, 63, 94, 0.8);
+  }
+}
+
+.animate-zoom-red {
+  animation: pulse-zoom-red-anim 1.5s ease-in-out infinite;
+}
+
+/* Green Signal Zoom In / Zoom Out Animation for Win */
+@keyframes pulse-zoom-green-anim {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 22px rgba(16, 185, 129, 0.8);
+  }
+}
+
+.animate-zoom-green {
+  animation: pulse-zoom-green-anim 1.5s ease-in-out infinite;
+}
+
+

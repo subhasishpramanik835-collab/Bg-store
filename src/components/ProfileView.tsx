@@ -158,10 +158,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
           {/* Wallet Balance & Action Buttons */}
           <div className="flex flex-col items-center md:items-end gap-3 w-full md:w-auto bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-            <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Total Wallet Balance</span>
-            <span className="text-2xl font-black text-amber-300 font-mono">
-              ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </span>
+            <div className="flex items-center gap-4">
+              <div className="text-center md:text-right">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Main Wallet</span>
+                <span className="text-2xl font-black text-amber-300 font-mono">
+                  ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="w-[1px] h-8 bg-slate-800"></div>
+              <div className="text-center md:text-right">
+                <span className="text-[10px] text-purple-400 uppercase tracking-wider font-semibold block">Bonus Wallet</span>
+                <span className="text-2xl font-black text-purple-300 font-mono">
+                  ₹{(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
