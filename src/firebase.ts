@@ -59,7 +59,11 @@ export async function testConnection() {
     await getDoc(doc(db, '_connection_test_', 'ping'));
   } catch (error) {
     if (error instanceof Error) {
-      console.warn('Firestore status check:', error.message);
+      if (error.message.includes('offline') || error.message.includes('Could not reach')) {
+        console.warn('Firestore notice: operating in offline/cached mode');
+      } else {
+        console.warn('Firestore status check:', error.message);
+      }
     }
   }
 }

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap, Shield } from 'lucide-react';
+import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap, Shield, Gift } from 'lucide-react';
 import { User, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
 import { WalletLedger } from './WalletLedger';
 import { VIP_TIERS, getNextTierInfo, calculateVipLevel } from '../utils/vip';
 import confetti from 'canvas-confetti';
+import { VoucherGenerator } from './VoucherGenerator';
 
 interface ProfileViewProps {
   user: User;
@@ -37,6 +38,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [ticketFilter, setTicketFilter] = useState<'all' | 'win' | 'loss'>('all');
   const [hasClaimedWeeklyBonus, setHasClaimedWeeklyBonus] = useState<boolean>(false);
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
+  const [selectedVoucherTx, setSelectedVoucherTx] = useState<any>(null);
 
   const isAdminUser = user.email?.toLowerCase() === 'asishp92@gmail.com' || user.role === 'admin';
   const vipPts = user.vipPoints || (user.totalSpent ? Math.floor(user.totalSpent / 10) : 120);
@@ -157,18 +159,39 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           {/* Wallet Balance & Action Buttons */}
-          <div className="flex flex-col items-center md:items-end gap-3 w-full md:w-auto bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
-            <div className="flex items-center gap-4">
-              <div className="text-center md:text-right">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Main Wallet</span>
-                <span className="text-2xl font-black text-amber-300 font-mono">
+          <div className="flex flex-col items-center md:items-end gap-3 w-full md:w-auto max-w-full bg-slate-950/80 p-3.5 sm:p-4 rounded-2xl border border-slate-800 overflow-hidden">
+            {/* Vertical Stacked Wallet Balance (Main UP, Bonus DOWN) */}
+            <div className="flex flex-col gap-2.5 w-full text-center md:text-right max-w-full overflow-hidden">
+              {/* Main Wallet (UP) */}
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-amber-500/30 flex items-center justify-between gap-3 w-full min-w-0 overflow-hidden">
+                <span className="text-[10px] sm:text-xs text-amber-400 font-mono font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0">
+                  <Wallet className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>MAIN WALLET</span>
+                </span>
+                <span className={`font-black text-amber-300 font-mono tracking-tight shrink min-w-0 text-right truncate ${
+                  `₹${user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 16 
+                    ? 'text-xs sm:text-sm' 
+                    : `₹${user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 12 
+                    ? 'text-sm sm:text-base' 
+                    : 'text-base sm:text-xl md:text-2xl'
+                }`}>
                   ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>
-              <div className="w-[1px] h-8 bg-slate-800"></div>
-              <div className="text-center md:text-right">
-                <span className="text-[10px] text-purple-400 uppercase tracking-wider font-semibold block">Bonus Wallet</span>
-                <span className="text-2xl font-black text-purple-300 font-mono">
+
+              {/* Bonus Wallet (DOWN) */}
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-purple-500/30 flex items-center justify-between gap-3 w-full min-w-0 overflow-hidden">
+                <span className="text-[10px] sm:text-xs text-purple-300 font-mono font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0">
+                  <Gift className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>BONUS WALLET</span>
+                </span>
+                <span className={`font-black text-purple-300 font-mono tracking-tight shrink min-w-0 text-right truncate ${
+                  `₹${(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 16 
+                    ? 'text-xs sm:text-sm' 
+                    : `₹${(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 12 
+                    ? 'text-sm sm:text-base' 
+                    : 'text-base sm:text-xl md:text-2xl'
+                }`}>
                   ₹{(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -380,31 +403,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               No tickets under {ticketFilter} filter.
             </div>
           ) : (
-            filteredTickets.map((t) => (
-              <div key={t.id} className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-amber-400">{t.id}</span>
-                    <span className="text-xs text-slate-400">• {t.purchaseDate}</span>
-                  </div>
-                  <h4 className="text-sm font-extrabold text-white font-mono">{t.drawTitle}</h4>
-                  <p className="text-xs font-mono text-slate-300">Ticket Digits: <strong className="text-amber-300">{t.selectedNumbers.join(' ')}</strong></p>
-                </div>
+            filteredTickets.map((t) => {
+              const isWin = t.status === 'win';
+              const isLoss = t.status === 'loss';
 
-                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
-                  <span className={`text-xs font-extrabold font-mono px-3 py-1 rounded-full border ${
-                    t.status === 'win'
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                      : t.status === 'loss'
-                      ? 'bg-rose-500/20 border-rose-500/30 text-rose-300'
-                      : 'bg-amber-500/20 border-amber-500/30 text-amber-300'
-                  }`}>
-                    {t.status === 'win' ? `WON ₹${t.wonAmount}` : t.status === 'loss' ? 'LOSS' : 'ACTIVE'}
-                  </span>
-                  <span className="font-mono text-xs font-bold text-slate-400">₹{t.price}</span>
+              return (
+                <div 
+                  key={t.id} 
+                  className={`p-4 bg-slate-900/90 border rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all hover:border-amber-500/50 cursor-pointer ${
+                    isWin 
+                      ? 'border-emerald-500/40 bg-emerald-950/10' 
+                      : isLoss 
+                      ? 'border-rose-500/40 bg-rose-950/10' 
+                      : 'border-slate-800'
+                  }`}
+                  onClick={() => { soundFx.playClick(); setSelectedVoucherTx(t); }}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-amber-400">{t.id}</span>
+                      <span className="text-xs text-slate-400">• {t.purchaseDate}</span>
+                    </div>
+                    <h4 className="text-sm font-extrabold text-white font-mono">{t.drawTitle}</h4>
+                    <p className="text-xs font-mono text-slate-300">
+                      Ticket Digits: <strong className="text-amber-300">{t.selectedNumbers.join(' ')}</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+                    
+                    {/* Signal Indicator Badge with Zoom Animations */}
+                    {isWin ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400 text-emerald-300 animate-zoom-green shadow-lg">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span>WIN (+₹{t.wonAmount})</span>
+                      </span>
+                    ) : isLoss ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-rose-500/20 border border-rose-400 text-rose-300 animate-zoom-red shadow-lg">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                        </span>
+                        <span>LOSS (-₹{t.price})</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300">
+                        ACTIVE
+                      </span>
+                    )}
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        soundFx.playClick();
+                        setSelectedVoucherTx(t);
+                      }}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white transition-colors"
+                      title="Share Voucher PNG"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )
         )}
 
@@ -416,7 +481,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           ) : (
             deposits.map((dep) => (
-              <div key={dep.id} className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div 
+                key={dep.id} 
+                className="p-4 bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer transition-all"
+                onClick={() => { soundFx.playClick(); setSelectedVoucherTx(dep); }}
+              >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-bold text-amber-400">{dep.id}</span>
@@ -436,6 +505,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   }`}>
                     {dep.status.toUpperCase()}
                   </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      soundFx.playClick();
+                      setSelectedVoucherTx(dep);
+                    }}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))
@@ -450,7 +529,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           ) : (
             withdrawals.map((wth) => (
-              <div key={wth.id} className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div 
+                key={wth.id} 
+                className="p-4 bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer transition-all"
+                onClick={() => { soundFx.playClick(); setSelectedVoucherTx(wth); }}
+              >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-bold text-amber-400">{wth.id}</span>
@@ -470,6 +553,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   }`}>
                     {wth.status.toUpperCase()}
                   </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      soundFx.playClick();
+                      setSelectedVoucherTx(wth);
+                    }}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))
@@ -540,6 +633,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               CLOSE PREVIEW
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Shareable HD Voucher Generator Modal */}
+      {selectedVoucherTx && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <VoucherGenerator
+            transaction={selectedVoucherTx}
+            onClose={() => setSelectedVoucherTx(null)}
+          />
         </div>
       )}
 

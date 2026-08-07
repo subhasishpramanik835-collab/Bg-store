@@ -36,11 +36,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
+      const isAdminEmail = user.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || user.email?.toLowerCase() === 'asishp92@gmail.com';
+
       // Sync user profile in Firestore
       const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
+      let userSnap: any = null;
+      try {
+        userSnap = await getDoc(userRef);
+      } catch (docErr) {
+        console.warn('AuthScreen getDoc offline or network delay:', docErr);
+      }
 
-      if (!userSnap.exists()) {
+      if (!userSnap || !userSnap.exists()) {
         const newUserDoc = {
           id: user.uid,
           name: user.displayName || 'BETGURU Player',
@@ -48,19 +55,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
           email: user.email || '',
           avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           balance: 100, // Welcome Bonus
+          bonusBalance: 100,
           totalWon: 0,
           totalSpent: 0,
           referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
           totalReferrals: 0,
           lastSpinTime: 0,
           status: 'active',
-          role: 'user'
+          role: isAdminEmail ? 'admin' : 'user',
+          vipLevel: 'Bronze',
+          vipPoints: 120,
+          regDate: new Date().toLocaleDateString('en-IN'),
+          createdAt: new Date().toISOString()
         };
-        await setDoc(userRef, newUserDoc);
+        await setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('setDoc newUserDoc offline:', err));
       } else {
-        if (user.photoURL) {
-          await setDoc(userRef, { avatarUrl: user.photoURL }, { merge: true });
-        }
+        const existingData = userSnap.data();
+        await setDoc(userRef, { 
+          avatarUrl: user.photoURL || existingData?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          name: user.displayName || existingData?.name || 'BETGURU Player',
+          email: user.email || existingData?.email || '',
+          role: isAdminEmail ? 'admin' : (existingData?.role || 'user'),
+          lastLogin: new Date().toISOString()
+        }, { merge: true }).catch((err) => console.warn('setDoc user login merge offline:', err));
       }
 
       soundFx.playCoin();
@@ -86,30 +103,50 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
       setError(null);
       soundFx.playClick();
 
+      const isAdminEmail = email.toLowerCase() === 'subhasishpramanik835@gmail.com' || email.toLowerCase() === 'asishp92@gmail.com';
+
       if (mode === 'login') {
         const result = await signInWithEmailAndPassword(auth, email, password);
         const user = result.user;
 
         // Ensure user document exists in Firestore
         const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
+        let userSnap: any = null;
+        try {
+          userSnap = await getDoc(userRef);
+        } catch (docErr) {
+          console.warn('AuthScreen login getDoc offline or network delay:', docErr);
+        }
 
-        if (!userSnap.exists()) {
+        if (!userSnap || !userSnap.exists()) {
           const newUserDoc = {
             id: user.uid,
             name: user.displayName || email.split('@')[0],
             phone: phone || '+91 9876543210',
             email: email,
+            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
             balance: 100,
+            bonusBalance: 100,
             totalWon: 0,
             totalSpent: 0,
             referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
             totalReferrals: 0,
             lastSpinTime: 0,
             status: 'active',
-            role: 'user'
+            role: isAdminEmail ? 'admin' : 'user',
+            vipLevel: 'Bronze',
+            vipPoints: 120,
+            regDate: new Date().toLocaleDateString('en-IN'),
+            createdAt: new Date().toISOString()
           };
-          await setDoc(userRef, newUserDoc);
+          await setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('setDoc newUserDoc offline:', err));
+        } else {
+          const existingData = userSnap.data();
+          await setDoc(userRef, {
+            email: email,
+            role: isAdminEmail ? 'admin' : (existingData?.role || 'user'),
+            lastLogin: new Date().toISOString()
+          }, { merge: true }).catch((err) => console.warn('setDoc email login merge offline:', err));
         }
       } else {
         // Signup
@@ -129,14 +166,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
           name: name,
           phone: phone || '+91 9876543210',
           email: email,
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           balance: 100, // ₹100 Free Welcome Bonus
+          bonusBalance: 100,
           totalWon: 0,
           totalSpent: 0,
           referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
           totalReferrals: 0,
           lastSpinTime: 0,
           status: 'active',
-          role: 'user'
+          role: isAdminEmail ? 'admin' : 'user',
+          vipLevel: 'Bronze',
+          vipPoints: 120,
+          regDate: new Date().toLocaleDateString('en-IN'),
+          createdAt: new Date().toISOString()
         };
 
         await setDoc(doc(db, 'users', user.uid), newUserDoc);

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
+import { VoucherGenerator } from './VoucherGenerator';
 
 interface WalletLedgerProps {
   transactions: WalletTransaction[];
@@ -35,15 +36,18 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
 
   // Helper functions for classification
   const isLossTx = (tx: WalletTransaction) => {
-    const lossTypes = ['roulette_bet', 'ticket_buy', 'loss', 'admin_deduction', 'withdrawal'];
+    if (tx.status === 'rejected' || tx.status === 'failed') return false;
+    const lossTypes = ['roulette_bet', 'ticket_buy', 'loss', 'admin_deduction'];
     if (lossTypes.includes(tx.type)) return true;
-    if (tx.amount < 0) return true;
+    if (tx.amount < 0 && tx.type !== 'withdrawal') return true;
     return false;
   };
 
   const isWinTx = (tx: WalletTransaction) => {
-    const winTypes = ['roulette_win', 'win_payout', 'win', 'wheel_bonus', 'deposit', 'admin_bonus', 'vip_bonus'];
+    if (tx.status === 'rejected' || tx.status === 'failed' || tx.status === 'pending') return false;
+    const winTypes = ['roulette_win', 'win_payout', 'win', 'wheel_bonus', 'admin_bonus', 'vip_bonus'];
     if (winTypes.includes(tx.type)) return true;
+    if (tx.type === 'deposit' && ((tx.status as string) === 'approved' || tx.status === 'completed')) return true;
     if (tx.amount > 0 && !isLossTx(tx)) return true;
     return false;
   };
@@ -223,68 +227,74 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
     switch (type) {
       case 'deposit':
         return {
-          label: 'Deposit',
+          label: 'Deposit Request',
           icon: <ArrowDownLeft className="w-4 h-4 text-emerald-400" />,
           bgColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
           sign: '+'
         };
       case 'withdrawal':
         return {
-          label: 'Withdrawal',
+          label: 'Bank Withdrawal',
           icon: <ArrowUpRight className="w-4 h-4 text-rose-400" />,
           bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
           sign: '-'
         };
       case 'ticket_buy':
         return {
-          label: 'Ticket Bet (-loss)',
+          label: 'Lottery Ticket Buy',
           icon: <Ticket className="w-4 h-4 text-amber-400" />,
-          bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
-          sign: '-loss'
+          bgColor: 'bg-slate-800 border-slate-700 text-amber-300',
+          sign: '-'
         };
       case 'roulette_bet':
         return {
-          label: 'Roulette Bet (-loss)',
+          label: 'Roulette Bet',
           icon: <TrendingDown className="w-4 h-4 text-rose-400" />,
           bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
-          sign: '-loss'
+          sign: '-'
+        };
+      case 'roulette_win':
+        return {
+          label: 'Roulette Win Payout',
+          icon: <Trophy className="w-4 h-4 text-yellow-400" />,
+          bgColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+          sign: '+'
         };
       case 'loss':
         return {
-          label: 'Bet Loss',
+          label: 'Game Loss',
           icon: <TrendingDown className="w-4 h-4 text-rose-400" />,
           bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
-          sign: '-loss'
+          sign: '-'
         };
       case 'win_payout':
       case 'win':
-      case 'roulette_win':
         return {
-          label: 'Game Win (win+)',
+          label: 'Jackpot Win Payout',
           icon: <Trophy className="w-4 h-4 text-yellow-400" />,
           bgColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
-          sign: 'win+'
+          sign: '+'
         };
       case 'wheel_bonus':
         return {
-          label: 'Wheel Bonus',
+          label: 'Wheel Bonus Credit',
           icon: <Gift className="w-4 h-4 text-purple-400" />,
           bgColor: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
-          sign: 'win+'
+          sign: '+'
         };
       case 'admin_bonus':
         return {
-          label: 'System Credit',
+          label: 'System Wallet Credit',
           icon: <Sparkles className="w-4 h-4 text-cyan-400" />,
           bgColor: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300',
           sign: '+'
         };
       case 'admin_deduction':
         return {
-          label: 'Admin Deduction',
+          label: 'System Wallet Deduction',
           icon: <TrendingDown className="w-4 h-4 text-rose-400" />,
           bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
-          sign: '-loss'
+          sign: '-'
         };
       default:
         return {
@@ -296,29 +306,76 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
     }
   };
 
-  // Helper for Outcome Signal Badge with Zoom In / Out Animation
+  // Helper for Outcome Signal Badge with Red/Green Signal Indicators and Zoom Animation
   const getOutcomeBadge = (tx: WalletTransaction) => {
-    const isWin = isWinTx(tx);
-    const isLoss = isLossTx(tx);
+    const statusLower = (tx.status || 'completed').toLowerCase();
 
-    if (isWin) {
+    if (statusLower === 'rejected' || statusLower === 'failed') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-zoom-red shadow-lg">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+          </span>
+          <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+          <span>REJECTED</span>
+        </span>
+      );
+    }
+
+    if (statusLower === 'pending') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-lg">
+          <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+          <span>PENDING</span>
+        </span>
+      );
+    }
+
+    if (tx.type === 'deposit') {
       return (
         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400 animate-zoom-green shadow-lg">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <span>APPROVED</span>
+        </span>
+      );
+    }
+
+    if (tx.type === 'withdrawal') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400 animate-zoom-green shadow-lg">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <span>SUCCESSFUL</span>
+        </span>
+      );
+    }
+
+    if (isWinTx(tx)) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400 animate-zoom-green shadow-lg">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           <span>WIN</span>
         </span>
       );
-    } else if (isLoss) {
+    } else if (isLossTx(tx)) {
       return (
         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400 animate-zoom-red shadow-lg">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+          </span>
           <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
-          <span>LOSS</span>
+          <span>LOST</span>
         </span>
       );
     } else {
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-          <Clock className="w-3 h-3 text-slate-400" />
+          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
           <span>{tx.status.toUpperCase()}</span>
         </span>
       );
@@ -372,53 +429,109 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
 
       </div>
 
-      {/* Ledger Filter & Search Control Toolbar */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by TXN ID, UTR, or description..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono transition-all"
-          />
+      {/* Ledger Filter Bar - Horizontal Scrollable Tabs */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none font-mono text-xs">
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('all'); }}
+            className={`px-4 py-2 rounded-xl font-black whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'all'
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            <span>ALL TRANSACTIONS</span>
+            <span className="text-[10px] bg-slate-950/40 px-1.5 py-0.5 rounded-full">
+              {transactions.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('deposit'); }}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'deposit'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg'
+                : 'bg-slate-900 text-emerald-400 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <ArrowDownLeft className="w-3.5 h-3.5" />
+            <span>Deposits (+)</span>
+          </button>
+
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('withdrawal'); }}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'withdrawal'
+                ? 'bg-rose-500 text-slate-950 border-rose-400 shadow-lg'
+                : 'bg-slate-900 text-rose-400 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Withdrawals (-)</span>
+          </button>
+
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('roulette'); }}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'roulette'
+                ? 'bg-yellow-500 text-slate-950 border-yellow-400 shadow-lg'
+                : 'bg-slate-900 text-yellow-400 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Roulette Bets & Wins</span>
+          </button>
+
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('ticket'); }}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'ticket'
+                ? 'bg-purple-500 text-white border-purple-400 shadow-lg'
+                : 'bg-slate-900 text-purple-300 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Ticket className="w-3.5 h-3.5" />
+            <span>Ticket Games</span>
+          </button>
+
+          <button
+            onClick={() => { soundFx.playClick(); setTypeFilter('bonus'); }}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border flex items-center gap-1.5 ${
+              typeFilter === 'bonus'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-lg'
+                : 'bg-slate-900 text-cyan-300 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Gift className="w-3.5 h-3.5" />
+            <span>Bonus & Rewards</span>
+          </button>
         </div>
 
-        {/* Type & Status Selectors */}
-        <div className="flex flex-wrap items-center gap-2">
-          
-          {/* Type Filter */}
-          <select
-            value={typeFilter}
-            onChange={(e) => { soundFx.playClick(); setTypeFilter(e.target.value); }}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500 cursor-pointer"
-          >
-            <option value="all">All Types</option>
-            <option value="deposit">Deposits (+)</option>
-            <option value="withdrawal">Withdrawals (-)</option>
-            <option value="ticket_buy">Ticket Buys (-)</option>
-            <option value="win_payout">Win Payouts (+)</option>
-            <option value="wheel_bonus">Wheel Bonuses (+)</option>
-            <option value="admin_bonus">System Credits (+)</option>
-          </select>
+        {/* Search & Status Controls */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by TXN ID, UTR, or description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono transition-all"
+            />
+          </div>
 
-          {/* Status Filter */}
           <select
             value={statusFilter}
             onChange={(e) => { soundFx.playClick(); setStatusFilter(e.target.value); }}
             className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500 cursor-pointer"
           >
             <option value="all">All Statuses</option>
-            <option value="completed">Completed</option>
+            <option value="completed">Completed / Approved</option>
             <option value="pending">Pending</option>
-            <option value="rejected">Rejected/Failed</option>
+            <option value="rejected">Rejected</option>
           </select>
-
         </div>
-
       </div>
 
       {/* Transactions Chronological List */}
@@ -492,130 +605,10 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
       {/* Transaction Detail & Shareable Voucher Slip Modal */}
       {selectedTx && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
-            
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-black text-white font-mono uppercase">Transaction Ledger Details</h3>
-              </div>
-              <button
-                onClick={() => setSelectedTx(null)}
-                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold text-xs"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Official Shareable Voucher Slip Card */}
-            <div className="relative bg-slate-950 p-5 rounded-2xl border-2 border-amber-500/40 space-y-4 shadow-xl overflow-hidden">
-              
-              {/* Background Watermark Stamp */}
-              <div className="absolute right-2 bottom-2 text-[60px] font-black text-amber-500/5 select-none pointer-events-none font-mono">
-                B ETGURU
-              </div>
-
-              {/* Voucher Header Banner */}
-              <div className="flex items-center justify-between border-b border-amber-500/30 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 font-black flex items-center justify-center font-mono text-base">
-                    B
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-amber-300 font-mono leading-none">ETGURU HD</h4>
-                    <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider">Official Voucher Slip</span>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 font-mono block">Voucher Ref</span>
-                  <span className="text-xs font-mono font-bold text-white">#BG-SLIP-{selectedTx.id.slice(-6)}</span>
-                </div>
-              </div>
-
-              {/* Outcome Banner with Signal Zoom Animation */}
-              <div className="flex flex-col items-center justify-center py-3 bg-slate-900/80 rounded-xl border border-slate-800 text-center space-y-1">
-                <span className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">Transaction Outcome</span>
-                <div className="my-1">{getOutcomeBadge(selectedTx)}</div>
-                
-                <div className={`text-2xl font-black font-mono tracking-tight mt-1 ${
-                  isWinTx(selectedTx)
-                    ? 'text-emerald-400 animate-zoom-green' 
-                    : 'text-rose-400 animate-zoom-red'
-                }`}>
-                  {isWinTx(selectedTx)
-                    ? `win+ ₹${Math.abs(selectedTx.amount).toLocaleString('en-IN')}` 
-                    : `-loss ₹${Math.abs(selectedTx.amount).toLocaleString('en-IN')}`}
-                </div>
-              </div>
-
-              {/* Transaction Key Details */}
-              <div className="space-y-2 text-xs font-mono">
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Transaction ID</span>
-                  <div className="flex items-center gap-1 font-bold text-amber-300">
-                    <span>{selectedTx.id}</span>
-                    <button
-                      onClick={() => handleCopy(selectedTx.id, 'tx_id')}
-                      className="p-1 text-slate-400 hover:text-amber-400"
-                    >
-                      {copiedId === 'tx_id' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Category</span>
-                  <span className="font-bold text-white capitalize">{selectedTx.type.replace('_', ' ')}</span>
-                </div>
-
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Date & Time</span>
-                  <span className="text-slate-200">{selectedTx.date}</span>
-                </div>
-
-                {selectedTx.utr && (
-                  <div className="flex justify-between py-1 border-b border-slate-800/80">
-                    <span className="text-slate-400">Bank UTR / Ref</span>
-                    <span className="font-bold text-emerald-400">{selectedTx.utr}</span>
-                  </div>
-                )}
-
-                <div className="pt-2">
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Description Note</span>
-                  <p className="text-xs text-slate-200 bg-slate-900 p-2.5 rounded-xl border border-slate-800 leading-relaxed font-mono">
-                    {selectedTx.description}
-                  </p>
-                </div>
-              </div>
-
-              {/* Security Audit Badge */}
-              <div className="flex items-center justify-center gap-1.5 text-[10px] text-amber-400/90 font-mono bg-amber-500/10 py-1.5 rounded-xl border border-amber-500/20">
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>100% Verified & Encrypted by B ETGURU Security Engine</span>
-              </div>
-
-            </div>
-
-            {/* Action Buttons: Share Voucher PNG & Close */}
-            <div className="space-y-2">
-              <button
-                onClick={() => handleShareVoucherPNG(selectedTx)}
-                className="w-full py-3 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs font-mono rounded-xl golden-shadow-btn flex items-center justify-center gap-2 transition-all active:scale-98"
-              >
-                <Share2 className="w-4 h-4" />
-                <span>SHARE VOUCHER SLIP (PNG)</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedTx(null)}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-extrabold text-xs font-mono rounded-xl transition-all"
-              >
-                CLOSE DETAILS
-              </button>
-            </div>
-
-          </div>
+          <VoucherGenerator
+            transaction={selectedTx}
+            onClose={() => setSelectedTx(null)}
+          />
         </div>
       )}
 

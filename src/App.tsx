@@ -25,7 +25,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { LiveRoulette } from './components/LiveRoulette';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 
 export default function App() {
@@ -54,25 +54,68 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
+  // Firestore Persistence Helpers
+  const persistUserBalance = async (userId: string, newBalance: number, newBonusBalance?: number) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const updateData: any = { balance: newBalance };
+      if (typeof newBonusBalance === 'number') {
+        updateData.bonusBalance = newBonusBalance;
+      }
+      await setDoc(userRef, updateData, { merge: true });
+    } catch (err) {
+      console.error('Error persisting balance to Firestore:', err);
+    }
+  };
+
+  const persistTransaction = async (tx: WalletTransaction) => {
+    try {
+      const txRef = doc(db, 'transactions', tx.id);
+      await setDoc(txRef, tx, { merge: true });
+    } catch (err) {
+      console.error('Error persisting transaction to Firestore:', err);
+    }
+  };
+
   // Initialize Firebase connection test & auth listener
   useEffect(() => {
     testConnection();
 
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         setCurrentUser(fbUser);
         try {
           const userRef = doc(db, 'users', fbUser.uid);
-          const userSnap = await getDoc(userRef);
+          const isAdminEmail = fbUser.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || fbUser.email?.toLowerCase() === 'asishp92@gmail.com';
+          
+          let userSnap: any = null;
+          try {
+            userSnap = await getDoc(userRef);
+          } catch (offlineErr) {
+            console.warn('Firestore user fetch offline or network delay, continuing with cached/default profile:', offlineErr);
+          }
 
-          if (userSnap.exists()) {
+          if (userSnap && userSnap.exists()) {
             const data = userSnap.data() as User;
-            setUser({
+            const updatedUser: User = {
               ...data,
               id: fbUser.uid,
-              email: fbUser.email || data.email,
-              avatarUrl: fbUser.photoURL || data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-            });
+              name: data.name || fbUser.displayName || 'BETGURU Player',
+              email: fbUser.email || data.email || '',
+              avatarUrl: fbUser.photoURL || data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+              role: isAdminEmail ? 'admin' : (data.role || 'user'),
+              bonusBalance: typeof data.bonusBalance === 'number' ? data.bonusBalance : 100,
+              balance: typeof data.balance === 'number' ? data.balance : 100
+            };
+            setUser(updatedUser);
+            // Keep Firestore user doc updated
+            setDoc(userRef, {
+              name: updatedUser.name,
+              email: updatedUser.email,
+              avatarUrl: updatedUser.avatarUrl,
+              role: updatedUser.role,
+              lastLogin: new Date().toISOString()
+            }, { merge: true }).catch((err) => console.warn('Deferred user update notice:', err));
           } else {
             const newUserDoc: User = {
               id: fbUser.uid,
@@ -81,18 +124,48 @@ export default function App() {
               email: fbUser.email || '',
               avatarUrl: fbUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
               balance: 100,
+              bonusBalance: 100,
               totalWon: 0,
               totalSpent: 0,
               referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
               totalReferrals: 0,
               lastSpinTime: 0,
               status: 'active',
-              vipLevel: 'Gold',
+              role: isAdminEmail ? 'admin' : 'user',
+              vipLevel: 'Bronze',
+              vipPoints: 120,
               regDate: new Date().toLocaleDateString('en-IN')
             };
-            await setDoc(userRef, newUserDoc);
             setUser(newUserDoc);
+            setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('Deferred new user creation notice:', err));
           }
+
+          // Real-time listener for user profile & balance with error callback
+          const unsubUser = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+              const uData = docSnap.data() as User;
+              setUser((prev) => ({
+                ...prev,
+                ...uData,
+                balance: typeof uData.balance === 'number' ? uData.balance : prev.balance,
+                bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : prev.bonusBalance
+              }));
+            }
+          }, (err) => {
+            console.warn('Real-time user snapshot notice:', err.message);
+          });
+
+          // Real-time listener for user transactions with error callback
+          const qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid));
+          const unsubTx = onSnapshot(qTx, (txSnap) => {
+            if (!txSnap.empty) {
+              const loadedTxs = txSnap.docs.map((d) => d.data() as WalletTransaction);
+              setTransactions(loadedTxs);
+            }
+          }, (err) => {
+            console.warn('Real-time transactions snapshot notice:', err.message);
+          });
+
         } catch (e) {
           console.error('Error syncing user with Firestore:', e);
         }
@@ -102,7 +175,7 @@ export default function App() {
       setAuthLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
   // Handle Logout
@@ -274,13 +347,15 @@ export default function App() {
       prev.map((d) => (d.id === depositId ? { ...d, status: 'approved' } : d))
     );
 
-    // Add funds to user wallet
+    // Add funds to user wallet & persist
+    const newBal = user.balance + dep.amount;
     setUser((prev) => ({
       ...prev,
-      balance: prev.balance + dep.amount
+      balance: newBal
     }));
+    persistUserBalance(dep.userId, newBal);
 
-    // Add transaction
+    // Add transaction & persist
     const depTx: WalletTransaction = {
       id: `TXN-DEP-${Date.now().toString().slice(-4)}`,
       userId: dep.userId,
@@ -291,6 +366,7 @@ export default function App() {
       date: new Date().toLocaleString('en-IN')
     };
     setTransactions((prev) => [depTx, ...prev]);
+    persistTransaction(depTx);
 
     // Send Notification
     const approveNtf: NotificationItem = {
@@ -308,18 +384,33 @@ export default function App() {
 
   // Handle Admin Reject Deposit
   const handleAdminRejectDeposit = (depositId: string, reason: string) => {
+    const dep = deposits.find((d) => d.id === depositId);
     setDeposits((prev) =>
       prev.map((d) => (d.id === depositId ? { ...d, status: 'rejected', rejectReason: reason } : d))
     );
+    if (dep) {
+      const rejTx: WalletTransaction = {
+        id: `TXN-DEP-REJ-${Date.now().toString().slice(-4)}`,
+        userId: dep.userId,
+        type: 'deposit',
+        amount: dep.amount,
+        description: `Deposit Rejected: ${reason}`,
+        status: 'rejected',
+        date: new Date().toLocaleString('en-IN')
+      };
+      setTransactions((prev) => [rejTx, ...prev]);
+      persistTransaction(rejTx);
+    }
   };
 
   // Handle Withdrawal Submission
   const handleWithdrawSubmit = (amount: number, fullName: string, accountNumber: string, ifscCode: string, upiId: string) => {
-    // Deduct balance transiently
+    const newBal = Math.max(0, user.balance - amount);
     setUser((prev) => ({
       ...prev,
-      balance: prev.balance - amount
+      balance: newBal
     }));
+    persistUserBalance(user.id, newBal);
 
     const newWth: WithdrawalRequest = {
       id: `WTH-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -348,6 +439,7 @@ export default function App() {
       date: new Date().toLocaleString('en-IN')
     };
     setTransactions((prev) => [wthTx, ...prev]);
+    persistTransaction(wthTx);
   };
 
   // Handle Admin Approve Withdrawal
@@ -574,15 +666,18 @@ export default function App() {
             }}
             onUpdateUserBalance={(newBalance) => {
               setUser((prev) => ({ ...prev, balance: newBalance }));
+              if (user?.id) persistUserBalance(user.id, newBalance);
             }}
             onUpdateUserBonusBalance={(newBonus) => {
               setUser((prev) => ({ ...prev, bonusBalance: newBonus }));
+              if (user?.id) persistUserBalance(user.id, user.balance, newBonus);
             }}
             onToggleUserStatus={() => {
               setUser((prev) => ({ ...prev, status: prev.status === 'active' ? 'suspended' : 'active' }));
             }}
             onAddTransaction={(tx) => {
               setTransactions((prev) => [tx, ...prev]);
+              persistTransaction(tx);
             }}
           />
         ) : (

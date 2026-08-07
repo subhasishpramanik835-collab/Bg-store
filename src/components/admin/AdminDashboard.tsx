@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
+import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface AdminDashboardProps {
   deposits: DepositRequest[];
@@ -56,6 +58,118 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingBalance, setEditingBalance] = useState<string>(user.balance.toString());
   const [editingBonusBalance, setEditingBonusBalance] = useState<string>((user.bonusBalance || 100).toString());
   const [auditNote, setAuditNote] = useState<string>('Manual Admin Adjustment');
+
+  // Real-time Firestore Users Collection Listener for Admin Panel
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState<boolean>(true);
+  const [editingBalances, setEditingBalances] = useState<{ [userId: string]: string }>({});
+  const [editingBonusBalances, setEditingBonusBalances] = useState<{ [userId: string]: string }>({});
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const usersRef = collection(db, 'users');
+      unsubscribe = onSnapshot(usersRef, (snapshot) => {
+        const fetched: User[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          fetched.push({
+            id: docSnap.id,
+            name: data.name || 'BETGURU Player',
+            email: data.email || 'N/A',
+            phone: data.phone || 'N/A',
+            avatarUrl: data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+            balance: typeof data.balance === 'number' ? data.balance : 0,
+            bonusBalance: typeof data.bonusBalance === 'number' ? data.bonusBalance : 0,
+            totalWon: typeof data.totalWon === 'number' ? data.totalWon : 0,
+            totalSpent: typeof data.totalSpent === 'number' ? data.totalSpent : 0,
+            referralCode: data.referralCode || `BG${Math.floor(100000 + Math.random() * 900000)}`,
+            totalReferrals: typeof data.totalReferrals === 'number' ? data.totalReferrals : 0,
+            lastSpinTime: typeof data.lastSpinTime === 'number' ? data.lastSpinTime : 0,
+            status: data.status || 'active',
+            role: data.role || 'user',
+            vipLevel: data.vipLevel || 'Bronze',
+            vipPoints: typeof data.vipPoints === 'number' ? data.vipPoints : 120,
+            regDate: data.regDate || new Date().toLocaleDateString('en-IN')
+          });
+        });
+        setAllUsers(fetched);
+        setLoadingUsers(false);
+      }, (err) => {
+        console.error('Firestore users listener error:', err);
+        setLoadingUsers(false);
+      });
+    } catch (e) {
+      console.error('Error starting users listener:', e);
+      setLoadingUsers(false);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Sync initial editing balances when allUsers loads
+  useEffect(() => {
+    const balMap: { [userId: string]: string } = {};
+    const bonusMap: { [userId: string]: string } = {};
+    allUsers.forEach((u) => {
+      balMap[u.id] = (editingBalances[u.id] !== undefined) ? editingBalances[u.id] : u.balance.toString();
+      bonusMap[u.id] = (editingBonusBalances[u.id] !== undefined) ? editingBonusBalances[u.id] : (u.bonusBalance || 0).toString();
+    });
+    setEditingBalances(balMap);
+    setEditingBonusBalances(bonusMap);
+  }, [allUsers.length]);
+
+  // Target User Wallet Modifiers
+  const handleUpdateTargetUserMainBalance = async (targetUser: User, newBal: number, note?: string) => {
+    try {
+      await setDoc(doc(db, 'users', targetUser.id), { balance: newBal }, { merge: true });
+      logAuditTx('Main', 'set', 0, newBal, note || `Admin set ${targetUser.name}'s balance`);
+      if (targetUser.id === user.id) {
+        onUpdateUserBalance(newBal);
+      }
+      soundFx.playCoin();
+    } catch (e) {
+      console.error('Error updating target user balance:', e);
+    }
+  };
+
+  const handleUpdateTargetUserBonusBalance = async (targetUser: User, newBonus: number, note?: string) => {
+    try {
+      await setDoc(doc(db, 'users', targetUser.id), { bonusBalance: newBonus }, { merge: true });
+      logAuditTx('Bonus', 'set', 0, newBonus, note || `Admin set ${targetUser.name}'s bonus`);
+      if (targetUser.id === user.id && onUpdateUserBonusBalance) {
+        onUpdateUserBonusBalance(newBonus);
+      }
+      soundFx.playCoin();
+    } catch (e) {
+      console.error('Error updating target user bonus:', e);
+    }
+  };
+
+  const handleToggleTargetUserStatus = async (targetUser: User) => {
+    try {
+      const newStatus = targetUser.status === 'active' ? 'suspended' : 'active';
+      await setDoc(doc(db, 'users', targetUser.id), { status: newStatus }, { merge: true });
+      if (targetUser.id === user.id) {
+        onToggleUserStatus();
+      }
+      soundFx.playClick();
+    } catch (e) {
+      console.error('Error toggling target user status:', e);
+    }
+  };
+
+  const handleToggleTargetUserRole = async (targetUser: User) => {
+    try {
+      const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
+      await setDoc(doc(db, 'users', targetUser.id), { role: newRole }, { merge: true });
+      soundFx.playClick();
+    } catch (e) {
+      console.error('Error toggling target user role:', e);
+    }
+  };
 
   // Helper for recording Wallet Audit Transactions
   const logAuditTx = (walletType: 'Main' | 'Bonus', changeType: 'set' | 'add' | 'deduct', amount: number, newTotal: number, note?: string) => {
@@ -461,189 +575,284 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* TAB 5: USER MANAGEMENT */}
       {adminTab === 'users' && (
-        <div className="space-y-4 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <h2 className="text-lg font-black text-white font-mono">User Directory & Wallet Modifier</h2>
-            <div className="relative w-full sm:w-64">
+            <div>
+              <h2 className="text-xl font-black text-white font-mono flex items-center gap-2">
+                <Users className="w-5 h-5 text-amber-400" />
+                <span>REGISTERED PLAYERS DIRECTORY</span>
+              </h2>
+              <p className="text-xs text-slate-400 font-mono">
+                Real-time Firestore user database ({allUsers.length} total registered accounts)
+              </p>
+            </div>
+            <div className="relative w-full sm:w-72">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search players..."
+                placeholder="Search name, email, phone, ID..."
                 value={userSearchTerm}
                 onChange={(e) => setUserSearchTerm(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-white text-xs font-mono rounded-xl pl-9 pr-3 py-2 outline-none"
+                className="w-full bg-slate-950 border border-slate-800 text-white text-xs font-mono rounded-xl pl-9 pr-3 py-2.5 outline-none focus:border-amber-500/50"
               />
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-950 rounded-2xl border border-slate-800">
-              <div className="flex items-center gap-3">
-                <img src={user.avatarUrl} alt={user.name} className="w-12 h-12 rounded-xl object-cover border border-amber-400" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-black text-white font-mono">{user.name}</h4>
-                    <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-500/30 uppercase font-mono">
-                      👑 VIP {user.vipLevel || 'Bronze'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 font-mono">ID: {user.id} | Phone: {user.phone} | VIP Pts: {(user.vipPoints || 120).toLocaleString()}</p>
-                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${user.status === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
-                    Status: {user.status}
-                  </span>
-                </div>
-              </div>
-
-              {/* Wallet & VIP Tier Adjustment Panel */}
-              <div className="flex flex-col gap-3 w-full sm:w-auto">
-                
-                {/* Main Wallet Management Box */}
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-amber-400 font-bold flex items-center gap-1">
-                      <Wallet className="w-3.5 h-3.5" /> MAIN WALLET
-                    </span>
-                    <span className="text-white font-black">₹{user.balance.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 font-mono text-xs">
-                    <input
-                      type="number"
-                      value={editingBalance}
-                      onChange={(e) => setEditingBalance(e.target.value)}
-                      className="w-24 bg-slate-950 border border-slate-700 px-2.5 py-1 rounded-xl font-bold text-amber-300 outline-none"
-                    />
-                    <button
-                      onClick={() => {
-                        const parsed = parseFloat(editingBalance);
-                        if (!isNaN(parsed)) {
-                          onUpdateUserBalance(parsed);
-                          logAuditTx('Main', 'set', 0, parsed, auditNote);
-                          soundFx.playCoin();
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-400 font-bold text-[10px]"
-                    >
-                      Set Main
-                    </button>
-                    <button
-                      onClick={() => {
-                        const amt = prompt('Enter amount to ADD to Main Wallet (₹):', '500');
-                        if (amt) {
-                          const val = parseFloat(amt);
-                          if (!isNaN(val) && val > 0) {
-                            const newBal = user.balance + val;
-                            onUpdateUserBalance(newBal);
-                            logAuditTx('Main', 'add', val, newBal, 'User Directory Credit');
-                            soundFx.playCoin();
-                          }
-                        }
-                      }}
-                      className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
-                    >
-                      + Add
-                    </button>
-                    <button
-                      onClick={() => {
-                        const amt = prompt('Enter amount to DEDUCT from Main Wallet (₹):', '200');
-                        if (amt) {
-                          const val = parseFloat(amt);
-                          if (!isNaN(val) && val > 0) {
-                            const newBal = Math.max(0, user.balance - val);
-                            onUpdateUserBalance(newBal);
-                            logAuditTx('Main', 'deduct', val, newBal, 'User Directory Debit');
-                            soundFx.playClick();
-                          }
-                        }
-                      }}
-                      className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
-                    >
-                      - Deduct
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bonus Wallet Management Box */}
-                <div className="bg-slate-900 border border-purple-900/40 p-3 rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-purple-300 font-bold flex items-center gap-1">
-                      <Gift className="w-3.5 h-3.5 text-purple-400" /> BONUS WALLET
-                    </span>
-                    <span className="text-purple-200 font-black">₹{(user.bonusBalance || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 font-mono text-xs">
-                    <input
-                      type="number"
-                      value={editingBonusBalance}
-                      onChange={(e) => setEditingBonusBalance(e.target.value)}
-                      className="w-24 bg-slate-950 border border-purple-800/60 px-2.5 py-1 rounded-xl font-bold text-purple-300 outline-none"
-                    />
-                    <button
-                      onClick={() => {
-                        const parsed = parseFloat(editingBonusBalance);
-                        if (!isNaN(parsed) && onUpdateUserBonusBalance) {
-                          onUpdateUserBonusBalance(parsed);
-                          logAuditTx('Bonus', 'set', 0, parsed, auditNote);
-                          soundFx.playCoin();
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-purple-600 text-white rounded-xl hover:bg-purple-500 font-bold text-[10px]"
-                    >
-                      Set Bonus
-                    </button>
-                    <button
-                      onClick={() => {
-                        const amt = prompt('Enter amount to ADD to Bonus Wallet (₹):', '200');
-                        if (amt) {
-                          const val = parseFloat(amt);
-                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
-                            const newBonus = (user.bonusBalance || 0) + val;
-                            onUpdateUserBonusBalance(newBonus);
-                            logAuditTx('Bonus', 'add', val, newBonus, 'User Directory Bonus Credit');
-                            soundFx.playCoin();
-                          }
-                        }
-                      }}
-                      className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
-                    >
-                      + Add
-                    </button>
-                    <button
-                      onClick={() => {
-                        const amt = prompt('Enter amount to DEDUCT from Bonus Wallet (₹):', '100');
-                        if (amt) {
-                          const val = parseFloat(amt);
-                          if (!isNaN(val) && val > 0 && onUpdateUserBonusBalance) {
-                            const newBonus = Math.max(0, (user.bonusBalance || 0) - val);
-                            onUpdateUserBonusBalance(newBonus);
-                            logAuditTx('Bonus', 'deduct', val, newBonus, 'User Directory Bonus Debit');
-                            soundFx.playClick();
-                          }
-                        }
-                      }}
-                      className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
-                    >
-                      - Deduct
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={onToggleUserStatus}
-                    className={`flex-1 px-3 py-2 rounded-xl text-xs font-bold font-mono flex items-center justify-center gap-1 border ${
-                      user.status === 'active'
-                        ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
-                        : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
-                    }`}
-                  >
-                    {user.status === 'active' ? <Ban className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                    <span>{user.status === 'active' ? 'Suspend Account' : 'Activate Account'}</span>
-                  </button>
-                </div>
-
-              </div>
+          {/* User Stats Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl">
+              <span className="text-[10px] font-bold text-slate-400 uppercase font-mono block">Total Registered</span>
+              <span className="text-lg font-black text-white font-mono">{allUsers.length}</span>
+            </div>
+            <div className="bg-slate-900 border border-emerald-900/40 p-3.5 rounded-2xl">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase font-mono block">Active Players</span>
+              <span className="text-lg font-black text-emerald-300 font-mono">
+                {allUsers.filter((u) => u.status === 'active').length}
+              </span>
+            </div>
+            <div className="bg-slate-900 border border-rose-900/40 p-3.5 rounded-2xl">
+              <span className="text-[10px] font-bold text-rose-400 uppercase font-mono block">Suspended</span>
+              <span className="text-lg font-black text-rose-300 font-mono">
+                {allUsers.filter((u) => u.status === 'suspended').length}
+              </span>
+            </div>
+            <div className="bg-slate-900 border border-amber-900/40 p-3.5 rounded-2xl">
+              <span className="text-[10px] font-bold text-amber-400 uppercase font-mono block">Total System Balance</span>
+              <span className="text-lg font-black text-amber-300 font-mono">
+                ₹{allUsers.reduce((sum, u) => sum + (u.balance || 0) + (u.bonusBalance || 0), 0).toLocaleString('en-IN')}
+              </span>
             </div>
           </div>
+
+          {/* Directory Users List */}
+          {loadingUsers ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3 font-mono">
+              <RefreshCw className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
+              <p className="text-xs text-slate-400">Loading registered players from Firestore database...</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {allUsers
+                .filter((u) => {
+                  const term = userSearchTerm.toLowerCase().trim();
+                  if (!term) return true;
+                  return (
+                    u.name.toLowerCase().includes(term) ||
+                    u.email.toLowerCase().includes(term) ||
+                    u.phone.toLowerCase().includes(term) ||
+                    u.id.toLowerCase().includes(term) ||
+                    (u.referralCode && u.referralCode.toLowerCase().includes(term))
+                  );
+                })
+                .map((u) => {
+                  const currentMainEdit = editingBalances[u.id] !== undefined ? editingBalances[u.id] : u.balance.toString();
+                  const currentBonusEdit = editingBonusBalances[u.id] !== undefined ? editingBonusBalances[u.id] : (u.bonusBalance || 0).toString();
+
+                  return (
+                    <div
+                      key={u.id}
+                      className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 hover:border-slate-700 transition-all"
+                    >
+                      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                        {/* User Identity Info */}
+                        <div className="flex items-start sm:items-center gap-3">
+                          <img
+                            src={u.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                            alt={u.name}
+                            className="w-12 h-12 rounded-xl object-cover border border-amber-400 flex-shrink-0"
+                          />
+                          <div className="space-y-1 font-mono">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm font-black text-white">{u.name}</h4>
+                              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-500/30 uppercase">
+                                👑 VIP {u.vipLevel || 'Bronze'}
+                              </span>
+                              {u.role === 'admin' && (
+                                <span className="bg-purple-500/20 text-purple-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-purple-500/30 uppercase">
+                                  🛡️ ADMIN
+                                </span>
+                              )}
+                              <span
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                  u.status === 'active'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                }`}
+                              >
+                                {u.status}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-300 flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span className="text-amber-400 font-bold">Email: {u.email}</span>
+                              <span className="text-slate-400">Phone: {u.phone}</span>
+                              <span className="text-slate-400">Ref: {u.referralCode}</span>
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              UID: {u.id} | Reg Date: {u.regDate || 'N/A'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* User Action Controls */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+                          <button
+                            onClick={() => handleToggleTargetUserRole(u)}
+                            className="px-3 py-1.5 bg-purple-900/30 text-purple-300 border border-purple-800/40 rounded-xl hover:bg-purple-800/40 text-[11px] font-mono font-bold flex items-center justify-center gap-1"
+                          >
+                            <Crown className="w-3.5 h-3.5" />
+                            <span>{u.role === 'admin' ? 'Demote to User' : 'Make Admin'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleToggleTargetUserStatus(u)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold font-mono flex items-center justify-center gap-1 border ${
+                              u.status === 'active'
+                                ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
+                                : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
+                            }`}
+                          >
+                            {u.status === 'active' ? <Ban className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                            <span>{u.status === 'active' ? 'Suspend' : 'Activate'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Main & Bonus Wallet Modification Controls for this User */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Main Wallet Control */}
+                        <div className="bg-slate-950 border border-slate-800 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-amber-400 font-bold flex items-center gap-1">
+                              <Wallet className="w-3.5 h-3.5" /> MAIN WALLET
+                            </span>
+                            <span className="text-white font-black">₹{u.balance.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 font-mono text-xs">
+                            <input
+                              type="number"
+                              value={currentMainEdit}
+                              onChange={(e) =>
+                                setEditingBalances((prev) => ({ ...prev, [u.id]: e.target.value }))
+                              }
+                              className="w-24 bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-xl font-bold text-amber-300 outline-none"
+                            />
+                            <button
+                              onClick={() => {
+                                const parsed = parseFloat(currentMainEdit);
+                                if (!isNaN(parsed)) {
+                                  handleUpdateTargetUserMainBalance(u, parsed);
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-400 font-bold text-[10px]"
+                            >
+                              Set Main
+                            </button>
+                            <button
+                              onClick={() => {
+                                const amt = prompt(`Enter amount to ADD to ${u.name}'s Main Wallet (₹):`, '500');
+                                if (amt) {
+                                  const val = parseFloat(amt);
+                                  if (!isNaN(val) && val > 0) {
+                                    handleUpdateTargetUserMainBalance(u, u.balance + val, `Admin Credit +₹${val}`);
+                                  }
+                                }
+                              }}
+                              className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
+                            >
+                              + Add
+                            </button>
+                            <button
+                              onClick={() => {
+                                const amt = prompt(`Enter amount to DEDUCT from ${u.name}'s Main Wallet (₹):`, '200');
+                                if (amt) {
+                                  const val = parseFloat(amt);
+                                  if (!isNaN(val) && val > 0) {
+                                    handleUpdateTargetUserMainBalance(u, Math.max(0, u.balance - val), `Admin Debit -₹${val}`);
+                                  }
+                                }
+                              }}
+                              className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
+                            >
+                              - Deduct
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bonus Wallet Control */}
+                        <div className="bg-slate-950 border border-purple-900/40 p-3 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-purple-300 font-bold flex items-center gap-1">
+                              <Gift className="w-3.5 h-3.5 text-purple-400" /> BONUS WALLET
+                            </span>
+                            <span className="text-purple-200 font-black">₹{(u.bonusBalance || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 font-mono text-xs">
+                            <input
+                              type="number"
+                              value={currentBonusEdit}
+                              onChange={(e) =>
+                                setEditingBonusBalances((prev) => ({ ...prev, [u.id]: e.target.value }))
+                              }
+                              className="w-24 bg-slate-900 border border-purple-800/60 px-2.5 py-1 rounded-xl font-bold text-purple-300 outline-none"
+                            />
+                            <button
+                              onClick={() => {
+                                const parsed = parseFloat(currentBonusEdit);
+                                if (!isNaN(parsed)) {
+                                  handleUpdateTargetUserBonusBalance(u, parsed);
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-purple-600 text-white rounded-xl hover:bg-purple-500 font-bold text-[10px]"
+                            >
+                              Set Bonus
+                            </button>
+                            <button
+                              onClick={() => {
+                                const amt = prompt(`Enter amount to ADD to ${u.name}'s Bonus Wallet (₹):`, '200');
+                                if (amt) {
+                                  const val = parseFloat(amt);
+                                  if (!isNaN(val) && val > 0) {
+                                    handleUpdateTargetUserBonusBalance(u, (u.bonusBalance || 0) + val, `Admin Bonus Credit +₹${val}`);
+                                  }
+                                }
+                              }}
+                              className="px-2 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 font-bold text-[10px]"
+                            >
+                              + Add
+                            </button>
+                            <button
+                              onClick={() => {
+                                const amt = prompt(`Enter amount to DEDUCT from ${u.name}'s Bonus Wallet (₹):`, '100');
+                                if (amt) {
+                                  const val = parseFloat(amt);
+                                  if (!isNaN(val) && val > 0) {
+                                    handleUpdateTargetUserBonusBalance(u, Math.max(0, (u.bonusBalance || 0) - val), `Admin Bonus Debit -₹${val}`);
+                                  }
+                                }
+                              }}
+                              className="px-2 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl hover:bg-rose-500/30 font-bold text-[10px]"
+                            >
+                              - Deduct
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {allUsers.length === 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3 font-mono">
+                  <Users className="w-10 h-10 text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-white">No Registered Users Found</p>
+                  <p className="text-xs text-slate-400">
+                    When players register on the site via Google or Email on any browser, their profile will appear here instantly.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -679,14 +888,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Current Balances Summary */}
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-slate-800 rounded-xl text-center">
-                  <span className="text-[9px] text-amber-400 uppercase font-black tracking-wider block">MAIN WALLET</span>
-                  <span className="text-lg font-black text-amber-300 font-mono">₹{user.balance.toLocaleString('en-IN')}</span>
+              <div className="flex items-center gap-3 w-full md:w-auto max-w-full overflow-hidden">
+                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-slate-800 rounded-xl text-center min-w-0 overflow-hidden">
+                  <span className="text-[9px] text-amber-400 uppercase font-black tracking-wider block truncate">MAIN WALLET</span>
+                  <span className="text-sm sm:text-base md:text-lg font-black text-amber-300 font-mono block truncate">₹{user.balance.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-purple-800/60 rounded-xl text-center">
-                  <span className="text-[9px] text-purple-300 uppercase font-black tracking-wider block">BONUS WALLET</span>
-                  <span className="text-lg font-black text-purple-200 font-mono">₹{(user.bonusBalance || 0).toLocaleString('en-IN')}</span>
+                <div className="flex-1 md:flex-none p-3 bg-slate-900 border border-purple-800/60 rounded-xl text-center min-w-0 overflow-hidden">
+                  <span className="text-[9px] text-purple-300 uppercase font-black tracking-wider block truncate">BONUS WALLET</span>
+                  <span className="text-sm sm:text-base md:text-lg font-black text-purple-200 font-mono block truncate">₹{(user.bonusBalance || 0).toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
