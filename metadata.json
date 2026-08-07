@@ -1,0 +1,6 @@
+{
+  "name": "BETGURU",
+  "description": "Premium HD Lottery & Live Casino Roulette Gaming Platform with European 3D Wheel Physics, Voice Croupier, Wallet System, and Admin Portal",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
