@@ -237,11 +237,15 @@ export default function App() {
 
               if (isWin) {
                 // Auto add funds to user wallet
-                setUser((prev) => ({
-                  ...prev,
-                  balance: prev.balance + wonAmount,
-                  totalWon: prev.totalWon + wonAmount
-                }));
+                setUser((prev) => {
+                  const newBal = prev.balance + wonAmount;
+                  persistUserBalance(user.id, newBal);
+                  return {
+                    ...prev,
+                    balance: newBal,
+                    totalWon: prev.totalWon + wonAmount
+                  };
+                });
 
                 // Add win transaction
                 const winTx: WalletTransaction = {
@@ -254,6 +258,7 @@ export default function App() {
                   date: new Date().toLocaleString('en-IN')
                 };
                 setTransactions((prev) => [winTx, ...prev]);
+                persistTransaction(winTx);
 
                 // Add notification
                 const winNtf: NotificationItem = {
@@ -485,6 +490,7 @@ export default function App() {
     const earnedVipPts = Math.floor(totalPrice / 10);
 
     // Deduct user balance & add VIP Points
+    const newBal = Math.max(0, user.balance - totalPrice);
     setUser((prev) => {
       const newPts = (prev.vipPoints || 120) + earnedVipPts;
       let newLevel = prev.vipLevel;
@@ -494,12 +500,13 @@ export default function App() {
 
       return {
         ...prev,
-        balance: prev.balance - totalPrice,
+        balance: newBal,
         totalSpent: prev.totalSpent + totalPrice,
         vipPoints: newPts,
         vipLevel: newLevel
       };
     });
+    if (user?.id) persistUserBalance(user.id, newBal);
 
     // Create tickets
     const newTickets: PurchasedTicket[] = ticketDigitsArray.map((digits) => ({
@@ -528,6 +535,7 @@ export default function App() {
       date: new Date().toLocaleString('en-IN')
     };
     setTransactions((prev) => [tx, ...prev]);
+    persistTransaction(tx);
 
     // Update tickets sold count
     setDraws((prev) =>
@@ -539,10 +547,12 @@ export default function App() {
 
   // Handle Weekly VIP Bonus Claim
   const handleClaimVipBonus = (bonusAmount: number) => {
+    const newBal = user.balance + bonusAmount;
     setUser((prev) => ({
       ...prev,
-      balance: prev.balance + bonusAmount
+      balance: newBal
     }));
+    if (user?.id) persistUserBalance(user.id, newBal);
 
     const vipTx: WalletTransaction = {
       id: `TXN-VIP-${Date.now().toString().slice(-4)}`,
@@ -554,6 +564,7 @@ export default function App() {
       date: new Date().toLocaleString('en-IN')
     };
     setTransactions((prev) => [vipTx, ...prev]);
+    persistTransaction(vipTx);
 
     const ntf: NotificationItem = {
       id: `NTF-${Date.now()}`,
@@ -570,11 +581,13 @@ export default function App() {
 
   // Handle Claim Spin Reward
   const handleClaimWheelReward = (rewardAmount: number) => {
+    const newBal = user.balance + rewardAmount;
     setUser((prev) => ({
       ...prev,
-      balance: prev.balance + rewardAmount,
+      balance: newBal,
       lastSpinTime: Date.now()
     }));
+    if (user?.id) persistUserBalance(user.id, newBal);
 
     const wheelTx: WalletTransaction = {
       id: `TXN-WHEEL-${Date.now().toString().slice(-4)}`,
@@ -586,6 +599,7 @@ export default function App() {
       date: new Date().toLocaleString('en-IN')
     };
     setTransactions((prev) => [wheelTx, ...prev]);
+    persistTransaction(wheelTx);
 
     const ntf: NotificationItem = {
       id: `NTF-${Date.now()}`,
@@ -839,9 +853,11 @@ export default function App() {
           user={user}
           onUpdateBalance={(newBalance) => {
             setUser((prev) => ({ ...prev, balance: newBalance }));
+            if (user?.id) persistUserBalance(user.id, newBalance);
           }}
           onAddTransaction={(tx) => {
             setTransactions((prev) => [tx, ...prev]);
+            persistTransaction(tx);
           }}
           onClose={() => setIsLiveRouletteOpen(false)}
           onOpenDeposit={() => {
