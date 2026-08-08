@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Trophy, Wallet, Dices, Plus, ArrowUpRight, ShieldCheck, Flame, Star, CheckCircle2, Disc, Play } from 'lucide-react';
+import { Sparkles, Trophy, Wallet, Dices, Plus, ArrowUpRight, ShieldCheck, ShieldAlert, Flame, Star, CheckCircle2, Disc, Play } from 'lucide-react';
 import { User, LotteryDraw, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, NotificationItem, PaymentMethodType, UserSettings } from './types';
 import { loadState, saveState } from './utils/storage';
 import { soundFx } from './utils/audio';
@@ -54,6 +54,7 @@ export default function App() {
   // Firebase Auth State
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [userHasAdminClaim, setUserHasAdminClaim] = useState<boolean>(false);
 
   // Firestore Persistence Helpers
   const persistUserBalance = async (userId: string, newBalance: number, newBonusBalance?: number) => {
@@ -96,17 +97,56 @@ export default function App() {
     }
   };
 
+  const persistTicket = async (ticket: PurchasedTicket) => {
+    try {
+      const ticketRef = doc(db, 'tickets', ticket.id);
+      await setDoc(ticketRef, ticket, { merge: true });
+    } catch (err) {
+      console.error('Error persisting ticket to Firestore:', err);
+    }
+  };
+
   // Initialize Firebase connection test & auth listener
   useEffect(() => {
     testConnection();
 
+    let unsubUser: (() => void) | null = null;
+    let unsubTx: (() => void) | null = null;
+    let unsubDeposits: (() => void) | null = null;
+    let unsubWithdrawals: (() => void) | null = null;
+    let unsubTickets: (() => void) | null = null;
+    let unsubRoulette: (() => void) | null = null;
+
+    const cleanupListeners = () => {
+      if (unsubUser) { try { unsubUser(); } catch (_) {} unsubUser = null; }
+      if (unsubTx) { try { unsubTx(); } catch (_) {} unsubTx = null; }
+      if (unsubDeposits) { try { unsubDeposits(); } catch (_) {} unsubDeposits = null; }
+      if (unsubWithdrawals) { try { unsubWithdrawals(); } catch (_) {} unsubWithdrawals = null; }
+      if (unsubTickets) { try { unsubTickets(); } catch (_) {} unsubTickets = null; }
+      if (unsubRoulette) { try { unsubRoulette(); } catch (_) {} unsubRoulette = null; }
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      cleanupListeners();
+
       if (fbUser) {
         setCurrentUser(fbUser);
         try {
           const userRef = doc(db, 'users', fbUser.uid);
           const isAdminEmail = fbUser.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || fbUser.email?.toLowerCase() === 'asishp92@gmail.com';
           
+          let claimsAdmin = false;
+          try {
+            const tokenResult = await fbUser.getIdTokenResult();
+            const claims = tokenResult.claims;
+            const roleClaim = claims.role || (claims.admin ? 'admin' : claims.super_admin ? 'super_admin' : undefined);
+            claimsAdmin = roleClaim === 'admin' || roleClaim === 'super_admin' || claims.admin === true || claims.super_admin === true || isAdminEmail;
+          } catch (tokenErr) {
+            console.warn('Error reading ID token custom claims:', tokenErr);
+            claimsAdmin = isAdminEmail;
+          }
+          setUserHasAdminClaim(claimsAdmin);
+
           let userSnap: any = null;
           try {
             userSnap = await getDoc(userRef);
@@ -122,7 +162,7 @@ export default function App() {
               name: data.name || fbUser.displayName || 'BETGURU Player',
               email: fbUser.email || data.email || '',
               avatarUrl: fbUser.photoURL || data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-              role: isAdminEmail ? 'admin' : (data.role || 'user'),
+              role: claimsAdmin ? 'admin' : (data.role || 'user'),
               bonusBalance: typeof data.bonusBalance === 'number' ? data.bonusBalance : 100,
               balance: typeof data.balance === 'number' ? data.balance : 100
             };
@@ -167,7 +207,7 @@ export default function App() {
           }
 
           // Real-time listener for user profile & balance with error callback
-          const unsubUser = onSnapshot(userRef, (docSnap) => {
+          unsubUser = onSnapshot(userRef, (docSnap) => {
             if (docSnap.exists()) {
               const uData = docSnap.data() as User;
               setUser((prev) => ({
@@ -181,9 +221,9 @@ export default function App() {
             console.warn('Real-time user snapshot notice:', err.message);
           });
 
-          // Real-time listener for user transactions with error callback
+          // 1. Distinct Firestore query for Financial Ledger / General Transactions
           const qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid));
-          const unsubTx = onSnapshot(qTx, (txSnap) => {
+          unsubTx = onSnapshot(qTx, (txSnap) => {
             if (!txSnap.empty) {
               const loadedTxs = txSnap.docs.map((d) => d.data() as WalletTransaction);
               setTransactions(loadedTxs);
@@ -192,23 +232,64 @@ export default function App() {
             console.warn('Real-time transactions snapshot notice:', err.message);
           });
 
-          // Real-time listener for Deposits collection across admin/users
-          const unsubDeposits = onSnapshot(collection(db, 'deposits'), (snap) => {
+          // 2. Distinct Firestore query for Deposit History Page
+          const qDeposits = claimsAdmin
+            ? collection(db, 'deposits')
+            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid));
+          unsubDeposits = onSnapshot(qDeposits, (snap) => {
             if (!snap.empty) {
               const list = snap.docs.map((d) => d.data() as DepositRequest);
               list.sort((a, b) => (b.id > a.id ? 1 : -1));
               setDeposits(list);
+            } else {
+              setDeposits([]);
             }
           }, (err) => console.warn('Real-time deposits snapshot notice:', err.message));
 
-          // Real-time listener for Withdrawals collection across admin/users
-          const unsubWithdrawals = onSnapshot(collection(db, 'withdrawals'), (snap) => {
+          // 3. Distinct Firestore query for Withdrawal History Page
+          const qWithdrawals = claimsAdmin
+            ? collection(db, 'withdrawals')
+            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid));
+          unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
             if (!snap.empty) {
               const list = snap.docs.map((d) => d.data() as WithdrawalRequest);
               list.sort((a, b) => (b.id > a.id ? 1 : -1));
               setWithdrawals(list);
+            } else {
+              setWithdrawals([]);
             }
           }, (err) => console.warn('Real-time withdrawals snapshot notice:', err.message));
+
+          // 4. Distinct Firestore query for Roulette History Page
+          const qRoulette = query(
+            collection(db, 'transactions'),
+            where('userId', '==', fbUser.uid),
+            where('type', 'in', ['roulette_bet', 'roulette_win'])
+          );
+          unsubRoulette = onSnapshot(qRoulette, (rouletteSnap) => {
+            if (!rouletteSnap.empty) {
+              const list = rouletteSnap.docs.map((d) => d.data() as WalletTransaction);
+              setTransactions((prev) => {
+                const map = new Map();
+                prev.forEach((t) => map.set(t.id, t));
+                list.forEach((t) => map.set(t.id, t));
+                return Array.from(map.values());
+              });
+            }
+          }, (err) => console.warn('Real-time roulette snapshot notice:', err.message));
+
+          // 5. Distinct Firestore query for Lottery History Page (Tickets)
+          const qTickets = claimsAdmin
+            ? collection(db, 'tickets')
+            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid));
+          unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
+            if (!ticketSnap.empty) {
+              const list = ticketSnap.docs.map((d) => d.data() as PurchasedTicket);
+              setTickets(list);
+            } else {
+              setTickets([]);
+            }
+          }, (err) => console.warn('Real-time tickets snapshot notice:', err.message));
 
         } catch (e) {
           console.error('Error syncing user with Firestore:', e);
@@ -219,7 +300,10 @@ export default function App() {
       setAuthLoading(false);
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      cleanupListeners();
+      unsubscribeAuth();
+    };
   }, []);
 
   // Handle Logout
@@ -380,7 +464,7 @@ export default function App() {
       id: `NTF-${Date.now()}`,
       userId: user.id,
       title: '⏳ Deposit Submitted under Verification',
-      message: `Your deposit request of ₹${amount} via ${method.toUpperCase()} (UTR: ${utr}) is under verification.`,
+      message: `Your deposit request of ₹${amount} via ${(method || 'UPI').toString().toUpperCase()} (UTR: ${utr}) is under verification.`,
       type: 'deposit',
       date: 'Just now',
       read: false
@@ -413,7 +497,7 @@ export default function App() {
       userId: dep.userId,
       type: 'deposit',
       amount: dep.amount,
-      description: `Approved Deposit via ${dep.method.toUpperCase()} (UTR: ${dep.utr})`,
+      description: `Approved Deposit via ${(dep.method || 'UPI').toString().toUpperCase()} (UTR: ${dep.utr})`,
       status: 'completed',
       date: new Date().toLocaleString('en-IN')
     };
@@ -607,6 +691,7 @@ export default function App() {
     }));
 
     setTickets((prev) => [...newTickets, ...prev]);
+    newTickets.forEach((t) => persistTicket(t));
 
     // Log transaction
     const tx: WalletTransaction = {
@@ -766,38 +851,55 @@ export default function App() {
       {/* Main View Router */}
       <main className="flex-1">
         {isAdminMode ? (
-          <AdminDashboard
-            deposits={deposits}
-            withdrawals={withdrawals}
-            draws={draws}
-            tickets={tickets}
-            user={user}
-            transactions={transactions}
-            onApproveDeposit={handleAdminApproveDeposit}
-            onRejectDeposit={handleAdminRejectDeposit}
-            onApproveWithdrawal={handleAdminApproveWithdrawal}
-            onRejectWithdrawal={handleAdminRejectWithdrawal}
-            onTriggerDrawResult={(drawId, winningNumbers) => {
-              setDraws((prev) =>
-                prev.map((d) => (d.id === drawId ? { ...d, winningNumbers } : d))
-              );
-            }}
-            onUpdateUserBalance={(newBalance) => {
-              setUser((prev) => ({ ...prev, balance: newBalance }));
-              if (user?.id) persistUserBalance(user.id, newBalance);
-            }}
-            onUpdateUserBonusBalance={(newBonus) => {
-              setUser((prev) => ({ ...prev, bonusBalance: newBonus }));
-              if (user?.id) persistUserBalance(user.id, user.balance, newBonus);
-            }}
-            onToggleUserStatus={() => {
-              setUser((prev) => ({ ...prev, status: prev.status === 'active' ? 'suspended' : 'active' }));
-            }}
-            onAddTransaction={(tx) => {
-              setTransactions((prev) => [tx, ...prev]);
-              persistTransaction(tx);
-            }}
-          />
+          userHasAdminClaim || user.role === 'admin' ? (
+            <AdminDashboard
+              deposits={deposits}
+              withdrawals={withdrawals}
+              draws={draws}
+              tickets={tickets}
+              user={user}
+              transactions={transactions}
+              hasAdminClaim={userHasAdminClaim}
+              onApproveDeposit={handleAdminApproveDeposit}
+              onRejectDeposit={handleAdminRejectDeposit}
+              onApproveWithdrawal={handleAdminApproveWithdrawal}
+              onRejectWithdrawal={handleAdminRejectWithdrawal}
+              onTriggerDrawResult={(drawId, winningNumbers) => {
+                setDraws((prev) =>
+                  prev.map((d) => (d.id === drawId ? { ...d, winningNumbers } : d))
+                );
+              }}
+              onUpdateUserBalance={(newBalance) => {
+                setUser((prev) => ({ ...prev, balance: newBalance }));
+                if (user?.id) persistUserBalance(user.id, newBalance);
+              }}
+              onUpdateUserBonusBalance={(newBonus) => {
+                setUser((prev) => ({ ...prev, bonusBalance: newBonus }));
+                if (user?.id) persistUserBalance(user.id, user.balance, newBonus);
+              }}
+              onToggleUserStatus={() => {
+                setUser((prev) => ({ ...prev, status: prev.status === 'active' ? 'suspended' : 'active' }));
+              }}
+              onAddTransaction={(tx) => {
+                setTransactions((prev) => [tx, ...prev]);
+                persistTransaction(tx);
+              }}
+            />
+          ) : (
+            <div className="max-w-2xl mx-auto my-12 p-8 bg-slate-900 border-2 border-rose-500/40 rounded-3xl text-center space-y-4 shadow-2xl">
+              <ShieldAlert className="w-16 h-16 text-rose-500 mx-auto animate-bounce" />
+              <h2 className="text-xl font-black text-white font-mono uppercase">ACCESS DENIED - CUSTOM CLAIM REQUIRED</h2>
+              <p className="text-xs text-slate-300 font-mono leading-relaxed">
+                Server-side role verification failed. Only accounts with verified <strong>'admin'</strong> or <strong>'super_admin'</strong> Firebase Custom Claims on their Auth Token are authorized to view the admin dashboard or perform sensitive approvals.
+              </p>
+              <button
+                onClick={() => setIsAdminMode(false)}
+                className="px-6 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl font-mono transition-all shadow-lg cursor-pointer"
+              >
+                RETURN TO APP
+              </button>
+            </div>
+          )
         ) : (
           <>
             {activeTab === 'home' && (

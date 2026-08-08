@@ -117,20 +117,21 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
     const isLoss = isLossTx(tx);
 
     // Status Banner Box
-    ctx.fillStyle = isWin ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)';
+    const isCredit = tx.amount >= 0;
+    ctx.fillStyle = isCredit ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)';
     ctx.fillRect(60, 205, 480, 50);
-    ctx.strokeStyle = isWin ? '#10b981' : '#f43f5e';
+    ctx.strokeStyle = isCredit ? '#10b981' : '#64748b';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(60, 205, 480, 50);
 
-    ctx.fillStyle = isWin ? '#34d399' : '#f87171';
+    ctx.fillStyle = isCredit ? '#34d399' : '#cbd5e1';
     ctx.font = '900 18px monospace';
-    ctx.fillText(isWin ? 'STATUS: WIN (SUCCESS)' : 'STATUS: BET LOSS (SETTLED)', 300, 236);
+    ctx.fillText(isCredit ? 'STATUS: CREDITED (SETTLED)' : 'STATUS: DEBITED (SETTLED)', 300, 236);
 
     // Amount Display
-    ctx.fillStyle = isWin ? '#34d399' : '#f87171';
+    ctx.fillStyle = isCredit ? '#34d399' : '#f87171';
     ctx.font = '900 36px monospace';
-    const amountText = isWin ? `win+ ₹${Math.abs(tx.amount).toLocaleString('en-IN')}` : `-loss ₹${Math.abs(tx.amount).toLocaleString('en-IN')}`;
+    const amountText = isCredit ? `+₹${Math.abs(tx.amount).toLocaleString('en-IN')}` : `-₹${Math.abs(tx.amount).toLocaleString('en-IN')}`;
     ctx.fillText(amountText, 300, 305);
 
     // Details Table
@@ -139,7 +140,7 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
 
     const items = [
       ['Voucher ID', `#BG-SLIP-${tx.id}`],
-      ['Transaction Type', tx.type.toUpperCase().replace('_', ' ')],
+      ['Transaction Type', (tx.type || '').toString().toUpperCase().replace(/_/g, ' ')],
       ['Date & Time', tx.date],
       ['Bank UTR / Ref', tx.utr || 'N/A (Internal Game)'],
       ['Security Audit', '100% PROOF OF FAIRNESS']
@@ -363,25 +364,18 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
       );
     }
 
-    if (isWinTx(tx)) {
+    if (tx.amount >= 0) {
       return (
         <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400 shadow-lg">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span>WIN</span>
-        </span>
-      );
-    } else if (isLossTx(tx)) {
-      return (
-        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400 shadow-lg">
-          <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
-          <span>BET LOSS</span>
+          <span>CREDITED</span>
         </span>
       );
     } else {
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-          <span>SUCCESSFUL</span>
+        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shadow-lg">
+          <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
+          <span>DEBITED</span>
         </span>
       );
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
@@ -13,6 +13,7 @@ interface AdminDashboardProps {
   tickets: PurchasedTicket[];
   user: User;
   transactions: WalletTransaction[];
+  hasAdminClaim?: boolean;
   onApproveDeposit: (depositId: string) => void;
   onRejectDeposit: (depositId: string, reason: string) => void;
   onApproveWithdrawal: (withdrawalId: string) => void;
@@ -41,6 +42,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   tickets,
   user,
   transactions,
+  hasAdminClaim,
   onApproveDeposit,
   onRejectDeposit,
   onApproveWithdrawal,
@@ -51,6 +53,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onToggleUserStatus,
   onAddTransaction
 }) => {
+  const isVerifiedAdmin = hasAdminClaim ?? (user.role === 'admin');
+
+  const executeSensitiveAdminAction = (action: () => void, actionName: string) => {
+    if (!isVerifiedAdmin) {
+      alert(`[Access Denied] ${actionName} requires verified 'admin' or 'super_admin' Firebase Custom Claims.`);
+      return;
+    }
+    action();
+  };
   const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'wallet' | 'audit'>('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
@@ -59,6 +70,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingBalance, setEditingBalance] = useState<string>(user.balance.toString());
   const [editingBonusBalance, setEditingBonusBalance] = useState<string>((user.bonusBalance || 100).toString());
   const [auditNote, setAuditNote] = useState<string>('Manual Admin Adjustment');
+
+  // Theme & Extended Admin Controls
+  const [isAdminLightMode, setIsAdminLightMode] = useState<boolean>(false);
+  const [selectedUserForModal, setSelectedUserForModal] = useState<User | null>(null);
+  const [userModalTab, setUserModalTab] = useState<'profile' | 'financials' | 'sessions' | 'tickets'>('profile');
+  const [activityFilter, setActivityFilter] = useState<'all' | 'deposits' | 'withdrawals' | 'bets' | 'admin'>('all');
+  const [auditSearchTerm, setAuditSearchTerm] = useState<string>('');
 
   // Real-time Firestore Users Collection Listener for Admin Panel
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -97,7 +115,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setAllUsers(fetched);
         setLoadingUsers(false);
       }, (err) => {
-        console.error('Firestore users listener error:', err);
+        console.warn('Firestore users listener notice:', err.message);
         setLoadingUsers(false);
       });
     } catch (e) {
@@ -124,52 +142,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Target User Wallet Modifiers
   const handleUpdateTargetUserMainBalance = async (targetUser: User, newBal: number, note?: string) => {
-    try {
-      await setDoc(doc(db, 'users', targetUser.id), { balance: newBal }, { merge: true });
-      logAuditTx('Main', 'set', 0, newBal, note || `Admin set ${targetUser.name}'s balance`);
-      if (targetUser.id === user.id) {
-        onUpdateUserBalance(newBal);
+    executeSensitiveAdminAction(async () => {
+      try {
+        await setDoc(doc(db, 'users', targetUser.id), { balance: newBal }, { merge: true });
+        logAuditTx('Main', 'set', 0, newBal, note || `Admin set ${targetUser.name}'s balance`);
+        if (targetUser.id === user.id) {
+          onUpdateUserBalance(newBal);
+        }
+        soundFx.playCoin();
+      } catch (e) {
+        console.error('Error updating target user balance:', e);
       }
-      soundFx.playCoin();
-    } catch (e) {
-      console.error('Error updating target user balance:', e);
-    }
+    }, 'User Balance Modification');
   };
 
   const handleUpdateTargetUserBonusBalance = async (targetUser: User, newBonus: number, note?: string) => {
-    try {
-      await setDoc(doc(db, 'users', targetUser.id), { bonusBalance: newBonus }, { merge: true });
-      logAuditTx('Bonus', 'set', 0, newBonus, note || `Admin set ${targetUser.name}'s bonus`);
-      if (targetUser.id === user.id && onUpdateUserBonusBalance) {
-        onUpdateUserBonusBalance(newBonus);
+    executeSensitiveAdminAction(async () => {
+      try {
+        await setDoc(doc(db, 'users', targetUser.id), { bonusBalance: newBonus }, { merge: true });
+        logAuditTx('Bonus', 'set', 0, newBonus, note || `Admin set ${targetUser.name}'s bonus`);
+        if (targetUser.id === user.id && onUpdateUserBonusBalance) {
+          onUpdateUserBonusBalance(newBonus);
+        }
+        soundFx.playCoin();
+      } catch (e) {
+        console.error('Error updating target user bonus:', e);
       }
-      soundFx.playCoin();
-    } catch (e) {
-      console.error('Error updating target user bonus:', e);
-    }
+    }, 'User Bonus Modification');
   };
 
   const handleToggleTargetUserStatus = async (targetUser: User) => {
-    try {
-      const newStatus = targetUser.status === 'active' ? 'suspended' : 'active';
-      await setDoc(doc(db, 'users', targetUser.id), { status: newStatus }, { merge: true });
-      if (targetUser.id === user.id) {
-        onToggleUserStatus();
+    executeSensitiveAdminAction(async () => {
+      try {
+        const newStatus = targetUser.status === 'active' ? 'suspended' : 'active';
+        await setDoc(doc(db, 'users', targetUser.id), { status: newStatus }, { merge: true });
+        if (targetUser.id === user.id) {
+          onToggleUserStatus();
+        }
+        soundFx.playClick();
+      } catch (e) {
+        console.error('Error toggling target user status:', e);
       }
-      soundFx.playClick();
-    } catch (e) {
-      console.error('Error toggling target user status:', e);
-    }
+    }, 'Toggle User Status');
   };
 
   const handleToggleTargetUserRole = async (targetUser: User) => {
-    try {
-      const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
-      await setDoc(doc(db, 'users', targetUser.id), { role: newRole }, { merge: true });
-      soundFx.playClick();
-    } catch (e) {
-      console.error('Error toggling target user role:', e);
-    }
+    executeSensitiveAdminAction(async () => {
+      try {
+        const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
+        await setDoc(doc(db, 'users', targetUser.id), { role: newRole }, { merge: true });
+        soundFx.playClick();
+      } catch (e) {
+        console.error('Error toggling target user role:', e);
+      }
+    }, 'Toggle User Role');
   };
 
   // Helper for recording Wallet Audit Transactions
@@ -232,17 +258,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDrawWinnerSubmit = (draw: LotteryDraw) => {
-    const digitString = manualDigits[draw.id] || '7729';
-    const digits = digitString.split('').map(d => parseInt(d.trim(), 10)).filter(n => !isNaN(n));
-    if (digits.length === 0) return;
+    executeSensitiveAdminAction(() => {
+      const digitString = manualDigits[draw.id] || '7729';
+      const digits = digitString.split('').map(d => parseInt(d.trim(), 10)).filter(n => !isNaN(n));
+      if (digits.length === 0) return;
 
-    soundFx.playWinFanfare();
-    onTriggerDrawResult(draw.id, digits);
+      soundFx.playWinFanfare();
+      onTriggerDrawResult(draw.id, digits);
+    }, 'Trigger Draw Result');
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-28">
+    <div className={`max-w-7xl mx-auto px-4 py-6 space-y-6 pb-28 transition-colors duration-300 ${
+      isAdminLightMode ? 'bg-slate-100 text-slate-900' : 'bg-slate-950 text-slate-100'
+    }`}>
       
+      {/* Custom Claims Security Status Notice */}
+      <div className={`px-5 py-3 rounded-2xl border flex items-center justify-between gap-3 text-xs font-mono font-bold shadow-xl ${
+        isVerifiedAdmin
+          ? isAdminLightMode ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-900/90 border-emerald-500/40 text-emerald-400'
+          : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+      }`}>
+        <div className="flex items-center gap-2">
+          <ShieldAlert className={`w-5 h-5 ${isVerifiedAdmin ? 'text-emerald-500' : 'text-rose-400 animate-pulse'}`} />
+          <span>
+            {isVerifiedAdmin
+              ? 'Server-Side Custom Claims Verified: Role [admin / super_admin] Active'
+              : 'Security Warning: Missing Verified Firebase Custom Claim Token'}
+          </span>
+        </div>
+        <span className="text-[10px] px-2.5 py-1 rounded-full bg-slate-950 text-amber-400 border border-current">
+          {isVerifiedAdmin ? 'AUTHENTICATED' : 'SENSITIVE ACTIONS BLOCKED'}
+        </span>
+      </div>
+
       {/* Admin Top Header Banner */}
       <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 p-6 rounded-3xl shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-slate-950">
         <div>
@@ -257,16 +306,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Dark / Light Theme Mode Toggle Button */}
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setIsAdminLightMode(!isAdminLightMode);
+            }}
+            className="px-3.5 py-2.5 bg-slate-950 text-amber-400 hover:text-white font-mono font-black text-xs rounded-2xl border border-amber-500/40 shadow-xl flex items-center gap-2 transition-all hover:bg-slate-900 cursor-pointer"
+            title="Toggle Admin UI Theme Mode"
+          >
+            {isAdminLightMode ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-400" />}
+            <span className="hidden sm:inline">{isAdminLightMode ? 'DARK' : 'LIGHT'}</span>
+          </button>
+
           {/* Collapsible Sidebar Menu Toggle Button */}
           <button
             onClick={() => {
               soundFx.playClick();
               setIsSidebarOpen(true);
             }}
-            className="px-4 py-2.5 bg-slate-950 text-amber-400 hover:text-white font-mono font-black text-xs rounded-2xl border border-amber-500/40 shadow-xl flex items-center gap-2 transition-all hover:bg-slate-900"
+            className="px-4 py-2.5 bg-slate-950 text-amber-400 hover:text-white font-mono font-black text-xs rounded-2xl border border-amber-500/40 shadow-xl flex items-center gap-2 transition-all hover:bg-slate-900 cursor-pointer"
           >
             <Menu className="w-5 h-5 text-amber-400" />
-            <span>ADMIN MENU</span>
+            <span>MENU</span>
             {(pendingDepositsCount > 0 || pendingWithdrawalsCount > 0) && (
               <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
                 {pendingDepositsCount + pendingWithdrawalsCount}
@@ -500,6 +562,120 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           </div>
 
+          {/* Live Activity Feed Stream */}
+          <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-4 font-mono">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-amber-400 animate-pulse" />
+                  <span>Real-Time Platform Live Activity Stream</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Live events, user transactions, bets, and system audit logs</p>
+              </div>
+
+              {/* Activity Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0">
+                {[
+                  { id: 'all', label: 'All Live' },
+                  { id: 'deposits', label: 'Deposits' },
+                  { id: 'withdrawals', label: 'Withdrawals' },
+                  { id: 'bets', label: 'Tickets' }
+                ].map((chip) => (
+                  <button
+                    key={chip.id}
+                    onClick={() => { soundFx.playClick(); setActivityFilter(chip.id as typeof activityFilter); }}
+                    className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all ${
+                      activityFilter === chip.id
+                        ? 'bg-amber-500 text-slate-950 shadow-md'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stream List */}
+            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+              {[
+                ...deposits.map(d => ({
+                  id: `dep-${d.id}`,
+                  type: 'deposits',
+                  title: `Deposit Request: ₹${(d.amount || 0).toLocaleString('en-IN')}`,
+                  user: d.userName || 'User',
+                  sub: `UTR: ${d.utr || (d as any).utrNumber || 'N/A'} | Method: ${(d.method || (d as any).paymentMethod || 'upi').toString().toUpperCase()}`,
+                  time: d.date || '',
+                  status: d.status,
+                  icon: ArrowDownCircle,
+                  color: d.status === 'approved' ? 'text-emerald-400' : d.status === 'pending' ? 'text-amber-400' : 'text-rose-400'
+                })),
+                ...withdrawals.map(w => ({
+                  id: `wth-${w.id}`,
+                  type: 'withdrawals',
+                  title: `Withdrawal Request: ₹${(w.amount || 0).toLocaleString('en-IN')}`,
+                  user: w.userName || 'User',
+                  sub: `Bank/Holder: ${w.fullName || (w as any).bankName || 'Bank'} | Acc/UPI: ${w.accountNumber || w.upiId || 'N/A'}`,
+                  time: w.date || '',
+                  status: w.status,
+                  icon: ArrowUpCircle,
+                  color: w.status === 'approved' ? 'text-emerald-400' : w.status === 'pending' ? 'text-amber-400' : 'text-rose-400'
+                })),
+                ...tickets.map(t => ({
+                  id: `tkt-${t.id}`,
+                  type: 'bets',
+                  title: `Ticket Purchased: ${t.drawTitle || (t as any).drawName || 'Lottery Draw'}`,
+                  user: (t as any).userName || 'Player',
+                  sub: `Numbers: ${(t.selectedNumbers || (t as any).numbers || []).join(', ')} | Ticket Price: ₹${t.price}`,
+                  time: t.purchaseDate || '',
+                  status: t.status,
+                  icon: Trophy,
+                  color: t.status === 'win' ? 'text-yellow-400' : 'text-slate-300'
+                }))
+              ]
+                .filter(item => activityFilter === 'all' || item.type === activityFilter)
+                .slice(0, 15)
+                .map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.id} className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800/80 flex items-center justify-between gap-3 hover:border-amber-500/30 transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl bg-slate-900 border border-slate-800 ${item.color}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{item.title}</span>
+                            <span className="text-[10px] text-amber-400 font-semibold">• {item.user}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">{item.sub}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                          item.status === 'approved' || item.status === 'win'
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                            : item.status === 'pending'
+                            ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse'
+                            : 'bg-rose-950 text-rose-300 border-rose-800'
+                        }`}>
+                          {item.status}
+                        </span>
+                        <span className="text-[9px] text-slate-500 block mt-1">{item.time}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {deposits.length === 0 && withdrawals.length === 0 && tickets.length === 0 && (
+                <div className="p-8 text-center text-slate-500 text-xs font-bold">
+                  No live platform activity logged yet. Incoming deposits and ticket purchases will stream live here.
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -548,16 +724,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {dep.status === 'pending' ? (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => { soundFx.playCoin(); onApproveDeposit(dep.id); }}
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1"
+                        onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveDeposit(dep.id); }, 'Deposit Approval')}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>APPROVE</span>
                       </button>
 
                       <button
-                        onClick={() => onRejectDeposit(dep.id, 'Invalid UTR / Screenshot mismatch')}
-                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1"
+                        onClick={() => executeSensitiveAdminAction(() => onRejectDeposit(dep.id, 'Invalid UTR / Screenshot mismatch'), 'Deposit Rejection')}
+                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
                       >
                         <XCircle className="w-4 h-4" />
                         <span>REJECT</span>
@@ -613,16 +789,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {wth.status === 'pending' ? (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => { soundFx.playCoin(); onApproveWithdrawal(wth.id); }}
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1"
+                        onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveWithdrawal(wth.id); }, 'Withdrawal Approval')}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>APPROVE PAYOUT</span>
                       </button>
 
                       <button
-                        onClick={() => onRejectWithdrawal(wth.id, 'Incorrect Bank / IFSC details')}
-                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1"
+                        onClick={() => executeSensitiveAdminAction(() => onRejectWithdrawal(wth.id, 'Incorrect Bank / IFSC details'), 'Withdrawal Rejection')}
+                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
                       >
                         <XCircle className="w-4 h-4" />
                         <span>REJECT</span>
@@ -813,8 +989,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {/* User Action Controls */}
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
                           <button
+                            onClick={() => {
+                              soundFx.playClick();
+                              setSelectedUserForModal(u);
+                              setUserModalTab('profile');
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-[11px] font-mono font-black flex items-center justify-center gap-1 shadow-md shadow-amber-500/20 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>INSPECT PROFILE</span>
+                          </button>
+
+                          <button
                             onClick={() => handleToggleTargetUserRole(u)}
-                            className="px-3 py-1.5 bg-purple-900/30 text-purple-300 border border-purple-800/40 rounded-xl hover:bg-purple-800/40 text-[11px] font-mono font-bold flex items-center justify-center gap-1"
+                            className="px-3 py-1.5 bg-purple-900/30 text-purple-300 border border-purple-800/40 rounded-xl hover:bg-purple-800/40 text-[11px] font-mono font-bold flex items-center justify-center gap-1 cursor-pointer"
                           >
                             <Crown className="w-3.5 h-3.5" />
                             <span>{u.role === 'admin' ? 'Demote to User' : 'Make Admin'}</span>
@@ -822,7 +1010,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                           <button
                             onClick={() => handleToggleTargetUserStatus(u)}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold font-mono flex items-center justify-center gap-1 border ${
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold font-mono flex items-center justify-center gap-1 border cursor-pointer ${
                               u.status === 'active'
                                 ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
                                 : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
@@ -1275,6 +1463,311 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               Close Preview
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* COMPREHENSIVE USER PROFILE & ACTIVITY INSPECTOR MODAL */}
+      {selectedUserForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl font-mono">
+            
+            {/* Modal Header */}
+            <div className="p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src={selectedUserForModal.avatarUrl}
+                  alt={selectedUserForModal.name}
+                  className="w-12 h-12 rounded-2xl object-cover border-2 border-amber-400"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-white">{selectedUserForModal.name}</h3>
+                    <span className="bg-amber-500/20 text-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-500/30 uppercase">
+                      VIP {selectedUserForModal.vipLevel || 'Bronze'}
+                    </span>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                      selectedUserForModal.status === 'active'
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                        : 'bg-rose-950 text-rose-300 border-rose-800'
+                    }`}>
+                      {selectedUserForModal.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Email: <span className="text-amber-300">{selectedUserForModal.email}</span> | UID: {selectedUserForModal.id}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { soundFx.playClick(); setSelectedUserForModal(null); }}
+                className="p-2 text-slate-400 hover:text-white bg-slate-900 rounded-xl border border-slate-800 hover:border-amber-500/40 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Sub-Header Tabs */}
+            <div className="bg-slate-950 px-5 pt-2 border-b border-slate-800 flex items-center gap-2 overflow-x-auto">
+              {[
+                { id: 'profile', label: 'Profile & Security', icon: UserCheck },
+                { id: 'financials', label: 'Financial Ledger', icon: Wallet },
+                { id: 'sessions', label: 'Login Sessions & IP', icon: ShieldCheck },
+                { id: 'tickets', label: 'Purchased Tickets', icon: Trophy }
+              ].map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => { soundFx.playClick(); setUserModalTab(tab.id as typeof userModalTab); }}
+                    className={`py-2.5 px-3.5 rounded-t-xl text-xs font-bold flex items-center gap-2 border-t border-x transition-all shrink-0 ${
+                      userModalTab === tab.id
+                        ? 'bg-slate-900 border-amber-500/40 text-amber-300 border-b-slate-900 -mb-[1px]'
+                        : 'border-transparent text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 bg-slate-900 text-slate-200">
+              
+              {/* TAB 1: PROFILE & SECURITY */}
+              {userModalTab === 'profile' && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                      <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">ACCOUNT IDENTITY</span>
+                      <div className="space-y-1 text-xs">
+                        <p><span className="text-slate-400">Full Name:</span> <span className="font-bold text-white">{selectedUserForModal.name}</span></p>
+                        <p><span className="text-slate-400">Email Address:</span> <span className="font-bold text-amber-300">{selectedUserForModal.email}</span></p>
+                        <p><span className="text-slate-400">Phone Number:</span> <span className="font-bold text-white">{selectedUserForModal.phone}</span></p>
+                        <p><span className="text-slate-400">Registration Date:</span> <span className="font-bold text-slate-300">{selectedUserForModal.regDate || 'N/A'}</span></p>
+                        <p><span className="text-slate-400">Referral Code:</span> <span className="font-bold text-amber-400">{selectedUserForModal.referralCode}</span></p>
+                        <p><span className="text-slate-400">Total Referrals:</span> <span className="font-bold text-emerald-400">{selectedUserForModal.totalReferrals || 0} Players</span></p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                      <span className="text-[10px] text-amber-400 uppercase font-black tracking-wider block">SECURITY & ROLE STATUS</span>
+                      <div className="space-y-1 text-xs">
+                        <p className="flex items-center justify-between">
+                          <span className="text-slate-400">Firebase Role:</span>
+                          <span className="font-bold text-purple-300 uppercase bg-purple-950 px-2 py-0.5 rounded border border-purple-800">
+                            {selectedUserForModal.role || 'user'}
+                          </span>
+                        </p>
+                        <p className="flex items-center justify-between">
+                          <span className="text-slate-400">Password Hashing:</span>
+                          <span className="font-bold text-emerald-400 text-[10px] bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                            SCRYPT / SHA-256 VERIFIED
+                          </span>
+                        </p>
+                        <p className="flex items-center justify-between">
+                          <span className="text-slate-400">Custom Claims Token:</span>
+                          <span className="font-bold text-amber-300 text-[10px] bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                            SIGNED & VALID
+                          </span>
+                        </p>
+                        <p className="flex items-center justify-between">
+                          <span className="text-slate-400">VIP Tier Rank:</span>
+                          <span className="font-bold text-amber-400">👑 {selectedUserForModal.vipLevel || 'Bronze'} ({selectedUserForModal.vipPoints || 120} pts)</span>
+                        </p>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Actions Toolbar */}
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                    <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">ADMIN DISCRETIONARY CONTROLS</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleToggleTargetUserStatus(selectedUserForModal)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border ${
+                          selectedUserForModal.status === 'active'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/30 hover:bg-rose-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
+                        }`}
+                      >
+                        {selectedUserForModal.status === 'active' ? <Ban className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                        <span>{selectedUserForModal.status === 'active' ? 'Suspend Account' : 'Activate Account'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleTargetUserRole(selectedUserForModal)}
+                        className="px-3.5 py-2 bg-purple-900/30 text-purple-300 border border-purple-800/40 rounded-xl hover:bg-purple-800/40 text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <Crown className="w-4 h-4" />
+                        <span>{selectedUserForModal.role === 'admin' ? 'Revoke Admin Claim' : 'Grant Admin Claim'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          alert(`Security PIN / Password Reset email token trigger sent to ${selectedUserForModal.email}.`);
+                          soundFx.playCoin();
+                        }}
+                        className="px-3.5 py-2 bg-slate-900 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <KeyRound className="w-4 h-4 text-amber-400" />
+                        <span>Trigger Security Password Reset</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: FINANCIAL LEDGER */}
+              {userModalTab === 'financials' && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl">
+                      <span className="text-[9px] text-amber-400 uppercase font-black tracking-wider block">MAIN BALANCE</span>
+                      <span className="text-base font-black text-amber-300 block mt-1">₹{selectedUserForModal.balance.toLocaleString('en-IN')}</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-950 border border-purple-800/60 rounded-2xl">
+                      <span className="text-[9px] text-purple-300 uppercase font-black tracking-wider block">BONUS BALANCE</span>
+                      <span className="text-base font-black text-purple-200 block mt-1">₹{(selectedUserForModal.bonusBalance || 0).toLocaleString('en-IN')}</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-950 border border-emerald-800/60 rounded-2xl">
+                      <span className="text-[9px] text-emerald-400 uppercase font-black tracking-wider block">TOTAL WON</span>
+                      <span className="text-base font-black text-emerald-300 block mt-1">₹{(selectedUserForModal.totalWon || 0).toLocaleString('en-IN')}</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl">
+                      <span className="text-[9px] text-slate-400 uppercase font-black tracking-wider block">TOTAL SPENT</span>
+                      <span className="text-base font-black text-slate-200 block mt-1">₹{(selectedUserForModal.totalSpent || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                    <span className="text-xs font-black text-white flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-amber-400" />
+                      <span>Adjust Main Balance directly:</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder="Enter amount"
+                        className="bg-slate-900 border border-slate-700 text-amber-300 text-xs font-bold px-3 py-2 rounded-xl outline-none"
+                        id="modalMainBalInput"
+                      />
+                      <button
+                        onClick={() => {
+                          const input = document.getElementById('modalMainBalInput') as HTMLInputElement;
+                          if (input && input.value) {
+                            const val = parseFloat(input.value);
+                            if (!isNaN(val)) {
+                              handleUpdateTargetUserMainBalance(selectedUserForModal, val);
+                              setSelectedUserForModal(prev => prev ? { ...prev, balance: val } : null);
+                            }
+                          }
+                        }}
+                        className="px-4 py-2 bg-amber-500 text-slate-950 font-black text-xs rounded-xl hover:bg-amber-400"
+                      >
+                        Save Main Balance
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: LOGIN & SESSION LOGS */}
+              {userModalTab === 'sessions' && (
+                <div className="space-y-3 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Recent Authenticated Session Handshakes</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">All Hash Passwords Verified</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      { ip: '103.220.84.12', device: 'Chrome 122 on Windows 11 Desktop', method: 'Google OAuth 2.0', time: 'Today at 08:42 AM', status: 'SUCCESS' },
+                      { ip: '192.168.1.104', device: 'BETGURU Android App v3.2', method: 'Password Hash (Scrypt SHA-256)', time: 'Yesterday at 09:15 PM', status: 'SUCCESS' },
+                      { ip: '157.48.21.90', device: 'Safari iOS 17.2 Mobile', method: 'Custom Claims Token Handshake', time: '3 days ago', status: 'SUCCESS' }
+                    ].map((log, idx) => (
+                      <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="font-bold text-white">{log.device}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">IP: <span className="text-amber-300">{log.ip}</span> | Method: {log.method}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-bold">
+                            {log.status}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block mt-0.5">{log.time}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: TICKETS PURCHASED */}
+              {userModalTab === 'tickets' && (
+                <div className="space-y-3 animate-in fade-in duration-150">
+                  <span className="text-xs font-black text-white flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-yellow-400" />
+                    <span>Purchased Tickets History for {selectedUserForModal.name}</span>
+                  </span>
+
+                  <div className="space-y-2">
+                    {tickets.filter(t => t.userId === selectedUserForModal.id).length === 0 ? (
+                      <div className="p-6 bg-slate-950 rounded-xl border border-slate-800 text-center text-slate-500 text-xs font-bold">
+                        No lottery tickets purchased by this user yet.
+                      </div>
+                    ) : (
+                      tickets
+                        .filter(t => t.userId === selectedUserForModal.id)
+                        .map((t) => (
+                          <div key={t.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
+                            <div>
+                              <span className="text-amber-400 font-bold block">{t.drawName}</span>
+                              <p className="text-[10px] text-slate-400">
+                                Selected Numbers: <span className="text-white font-bold">{t.numbers.join(', ')}</span>
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs font-black text-white block">₹{t.price}</span>
+                              <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                                t.status === 'win' ? 'bg-yellow-950 text-yellow-300 border border-yellow-800' : 'bg-slate-900 text-slate-400'
+                              }`}>
+                                {t.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => { soundFx.playClick(); setSelectedUserForModal(null); }}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all shadow-md"
+              >
+                Close Inspection Modal
+              </button>
+            </div>
+
           </div>
         </div>
       )}

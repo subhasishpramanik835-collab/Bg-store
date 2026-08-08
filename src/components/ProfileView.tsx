@@ -416,15 +416,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
-                        <span>WIN (+₹{t.wonAmount})</span>
+                        <span>PRIZE CLAIMED (+₹{t.wonAmount})</span>
                       </span>
                     ) : isLoss ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-rose-500/20 border border-rose-400 text-rose-300 animate-zoom-red shadow-lg">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 shadow-lg">
                         <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
                         </span>
-                        <span>LOSS (-₹{t.price})</span>
+                        <span>SETTLED (-₹{t.price})</span>
                       </span>
                     ) : (
                       <span className="text-xs font-extrabold font-mono px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300">
@@ -480,7 +479,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       ? 'bg-rose-500/20 border-rose-500/30 text-rose-300'
                       : 'bg-amber-500/20 border-amber-500/30 text-amber-300'
                   }`}>
-                    {dep.status.toUpperCase()}
+                    {(dep.status || '').toString().toUpperCase()}
                   </span>
                   <button
                     onClick={(e) => {
@@ -528,7 +527,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       ? 'bg-rose-500/20 border-rose-500/30 text-rose-300'
                       : 'bg-amber-500/20 border-amber-500/30 text-amber-300'
                   }`}>
-                    {wth.status === 'approved' ? 'SUCCESSFUL' : wth.status.toUpperCase()}
+                    {wth.status === 'approved' ? 'SUCCESSFUL' : (wth.status || '').toString().toUpperCase()}
                   </span>
                   <button
                     onClick={(e) => {
@@ -576,9 +575,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       {isWin ? '+' : ''}₹{Math.abs(tx.amount).toLocaleString('en-IN')}
                     </span>
                     <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded-full border ${
-                      isWin ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
+                      isWin ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-300'
                     }`}>
-                      {isWin ? 'WIN' : 'BET LOSS'}
+                      {isWin ? 'CREDITED' : 'DEBITED'}
                     </span>
                     <button
                       onClick={(e) => {
