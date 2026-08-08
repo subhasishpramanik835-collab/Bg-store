@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap, Shield, Gift } from 'lucide-react';
-import { User, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction } from '../types';
+import { User as UserIcon, Wallet, Copy, Check, Share2, Plus, ArrowUpRight, ArrowDownLeft, Ticket, Trophy, XCircle, ShieldCheck, Clock, LogOut, Crown, Award, Sparkles, ChevronRight, Zap, Shield, Gift, Settings, Volume2, VolumeX, Music, Vibrate, Sliders } from 'lucide-react';
+import { User, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, UserSettings } from '../types';
 import { soundFx } from '../utils/audio';
 import { WalletLedger } from './WalletLedger';
 import { VIP_TIERS, getNextTierInfo, calculateVipLevel } from '../utils/vip';
@@ -18,6 +18,7 @@ interface ProfileViewProps {
   onLogout?: () => void;
   onClaimVipBonus?: (bonusAmount: number) => void;
   onOpenAdmin?: () => void;
+  onUpdateSettings?: (newSettings: UserSettings) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -30,15 +31,56 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenWithdraw,
   onLogout,
   onClaimVipBonus,
-  onOpenAdmin
+  onOpenAdmin,
+  onUpdateSettings
 }) => {
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'deposits' | 'withdrawals' | 'tickets' | 'ledger'>('ledger');
+  const [activeTab, setActiveTab] = useState<'deposits' | 'withdrawals' | 'tickets' | 'roulette' | 'bonuses' | 'ledger'>('ledger');
   const [ticketFilter, setTicketFilter] = useState<'all' | 'win' | 'loss'>('all');
   const [hasClaimedWeeklyBonus, setHasClaimedWeeklyBonus] = useState<boolean>(false);
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<any>(null);
+  const [showSettingsCard, setShowSettingsCard] = useState<boolean>(true);
+
+  const [settings, setSettings] = useState<UserSettings>({
+    bgMusicEnabled: user.settings?.bgMusicEnabled ?? true,
+    soundEffectsEnabled: user.settings?.soundEffectsEnabled ?? true,
+    hapticEnabled: user.settings?.hapticEnabled ?? true
+  });
+
+  const handleToggleSetting = (key: keyof UserSettings) => {
+    const updated: UserSettings = {
+      ...settings,
+      [key]: !(settings[key] ?? true)
+    };
+    setSettings(updated);
+
+    if (key === 'bgMusicEnabled') soundFx.setBgMusicEnabled(updated.bgMusicEnabled ?? true);
+    if (key === 'soundEffectsEnabled') soundFx.setSoundEffectsEnabled(updated.soundEffectsEnabled ?? true);
+    if (key === 'hapticEnabled') soundFx.setHapticEnabled(updated.hapticEnabled ?? true);
+
+    soundFx.playClick();
+
+    if (onUpdateSettings) {
+      onUpdateSettings(updated);
+    }
+  };
+
+  const rouletteTx = transactions.filter(
+    (t) => t.type === 'roulette_bet' || t.type === 'roulette_win' || t.description.toLowerCase().includes('roulette')
+  );
+  const bonusTx = transactions.filter(
+    (t) =>
+      t.type === 'wheel_bonus' ||
+      t.type === 'admin_bonus' ||
+      t.type === 'vip_bonus' ||
+      t.type === 'admin_deduction' ||
+      t.description.toLowerCase().includes('bonus') ||
+      t.description.toLowerCase().includes('reward') ||
+      t.description.toLowerCase().includes('voucher') ||
+      t.description.toLowerCase().includes('cashback')
+  );
 
   const isAdminUser = user.email?.toLowerCase() === 'asishp92@gmail.com' || user.role === 'admin';
   const vipPts = user.vipPoints || (user.totalSpent ? Math.floor(user.totalSpent / 10) : 120);
@@ -214,6 +256,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span>WITHDRAW</span>
               </button>
 
+              <button
+                onClick={() => {
+                  soundFx.playClick();
+                  const elem = document.getElementById('settings-menu-card');
+                  if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+                  setShowSettingsCard(true);
+                }}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+                title="App Settings & Preferences"
+              >
+                <Settings className="w-4 h-4 text-amber-400" />
+                <span className="hidden sm:inline">SETTINGS</span>
+              </button>
+
               {isAdminUser && onOpenAdmin && (
                 <button
                   onClick={() => { soundFx.playClick(); onOpenAdmin(); }}
@@ -349,13 +405,122 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
+      {/* APP SETTINGS & PREFERENCES MENU CARD */}
+      <div id="settings-menu-card" className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-white font-mono uppercase">SETTINGS & GAME PREFERENCES</h3>
+              <p className="text-xs text-slate-400 font-mono">Independently control background music, game sounds, and touch haptics</p>
+            </div>
+          </div>
+          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full uppercase">
+            FIRESTORE SYNCED
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 1. Background Music */}
+          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl border transition-colors ${
+                settings.bgMusicEnabled ?? true
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-900 text-slate-500 border-slate-800'
+              }`}>
+                <Music className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white font-mono">Background Music</h4>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  {settings.bgMusicEnabled ?? true ? 'Playing ambient synth' : 'Music disabled'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => handleToggleSetting('bgMusicEnabled')}
+              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
+                settings.bgMusicEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
+              }`}
+              title="Toggle Background Music"
+            >
+              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
+            </button>
+          </div>
+
+          {/* 2. Sound Effects */}
+          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl border transition-colors ${
+                settings.soundEffectsEnabled ?? true
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-900 text-slate-500 border-slate-800'
+              }`}>
+                {settings.soundEffectsEnabled ?? true ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white font-mono">Game Sound Effects</h4>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  {settings.soundEffectsEnabled ?? true ? 'Spin whoosh & fanfares ON' : 'Game FX muted'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => handleToggleSetting('soundEffectsEnabled')}
+              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
+                settings.soundEffectsEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
+              }`}
+              title="Toggle Game Sound Effects"
+            >
+              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
+            </button>
+          </div>
+
+          {/* 3. Haptic Feedback */}
+          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl border transition-colors ${
+                settings.hapticEnabled ?? true
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-900 text-slate-500 border-slate-800'
+              }`}>
+                <Vibrate className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white font-mono">Haptic Vibration</h4>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  {settings.hapticEnabled ?? true ? 'Touch vibration feedback ON' : 'Vibration disabled'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => handleToggleSetting('hapticEnabled')}
+              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
+                settings.hapticEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
+              }`}
+              title="Toggle Haptic Feedback"
+            >
+              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* History Tabs Navigation */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
-            { id: 'tickets', label: 'Ticket History', count: tickets.length },
             { id: 'deposits', label: 'Deposit History', count: deposits.length },
             { id: 'withdrawals', label: 'Withdrawal History', count: withdrawals.length },
+            { id: 'roulette', label: 'Roulette Bets & Wins', count: rouletteTx.length },
+            { id: 'tickets', label: 'Ticket History', count: tickets.length },
+            { id: 'bonuses', label: 'Vouchers & Bonuses', count: bonusTx.length },
             { id: 'ledger', label: 'Wallet Ledger', count: transactions.length }
           ].map((tab) => (
             <button
@@ -545,13 +710,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
                   <span className="text-sm font-black text-rose-400 font-mono">-₹{wth.amount.toLocaleString('en-IN')}</span>
                   <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded-full border ${
-                    wth.status === 'approved'
+                    wth.status === 'approved' || wth.status === 'completed'
                       ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                       : wth.status === 'rejected'
                       ? 'bg-rose-500/20 border-rose-500/30 text-rose-300'
                       : 'bg-amber-500/20 border-amber-500/30 text-amber-300'
                   }`}>
-                    {wth.status.toUpperCase()}
+                    {wth.status === 'approved' ? 'SUCCESSFUL' : wth.status.toUpperCase()}
                   </span>
                   <button
                     onClick={(e) => {
@@ -566,6 +731,104 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               </div>
             ))
+          )
+        )}
+
+        {/* ROULETTE HISTORY */}
+        {activeTab === 'roulette' && (
+          rouletteTx.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 bg-slate-900/60 rounded-2xl border border-slate-800">
+              No roulette bets or wins yet.
+            </div>
+          ) : (
+            rouletteTx.map((tx) => {
+              const isWin = tx.type === 'roulette_win' || tx.amount > 0;
+              return (
+                <div
+                  key={tx.id}
+                  className={`p-4 bg-slate-900/90 border rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer transition-all ${
+                    isWin ? 'border-emerald-500/30 bg-emerald-950/10' : 'border-rose-500/30 bg-rose-950/10'
+                  }`}
+                  onClick={() => { soundFx.playClick(); setSelectedVoucherTx(tx); }}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-amber-400">{tx.id}</span>
+                      <span className="text-xs text-slate-400">• {tx.date}</span>
+                    </div>
+                    <p className="text-xs font-mono text-slate-200 font-bold">{tx.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+                    <span className={`text-sm font-black font-mono ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isWin ? '+' : ''}₹{Math.abs(tx.amount).toLocaleString('en-IN')}
+                    </span>
+                    <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded-full border ${
+                      isWin ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
+                    }`}>
+                      {isWin ? 'WIN' : 'BET LOSS'}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        soundFx.playClick();
+                        setSelectedVoucherTx(tx);
+                      }}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )
+        )}
+
+        {/* BONUSES & VOUCHERS HISTORY */}
+        {activeTab === 'bonuses' && (
+          bonusTx.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 bg-slate-900/60 rounded-2xl border border-slate-800">
+              No bonus or voucher rewards claimed yet.
+            </div>
+          ) : (
+            bonusTx.map((tx) => {
+              const isCredit = tx.amount >= 0;
+              return (
+                <div
+                  key={tx.id}
+                  className="p-4 bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer transition-all"
+                  onClick={() => { soundFx.playClick(); setSelectedVoucherTx(tx); }}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-amber-400">{tx.id}</span>
+                      <span className="text-xs text-slate-400">• {tx.date}</span>
+                    </div>
+                    <p className="text-xs font-mono text-slate-200 font-bold">{tx.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+                    <span className={`text-sm font-black font-mono ${isCredit ? 'text-cyan-400' : 'text-rose-400'}`}>
+                      {isCredit ? '+' : ''}₹{Math.abs(tx.amount).toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-[11px] font-bold font-mono px-2.5 py-1 rounded-full border bg-cyan-500/20 border-cyan-500/40 text-cyan-300">
+                      CREDITED
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        soundFx.playClick();
+                        setSelectedVoucherTx(tx);
+                      }}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )
         )}
 

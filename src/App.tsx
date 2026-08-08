@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Trophy, Wallet, Dices, Plus, ArrowUpRight, ShieldCheck, Flame, Star, CheckCircle2, Disc, Play } from 'lucide-react';
-import { User, LotteryDraw, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, NotificationItem, PaymentMethodType } from './types';
+import { User, LotteryDraw, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, NotificationItem, PaymentMethodType, UserSettings } from './types';
 import { loadState, saveState } from './utils/storage';
 import { soundFx } from './utils/audio';
 import { Header } from './components/Header';
@@ -108,6 +108,13 @@ export default function App() {
               balance: typeof data.balance === 'number' ? data.balance : 100
             };
             setUser(updatedUser);
+
+            if (data.settings) {
+              soundFx.setBgMusicEnabled(data.settings.bgMusicEnabled ?? true);
+              soundFx.setSoundEffectsEnabled(data.settings.soundEffectsEnabled ?? true);
+              soundFx.setHapticEnabled(data.settings.hapticEnabled ?? true);
+            }
+
             // Keep Firestore user doc updated
             setDoc(userRef, {
               name: updatedUser.name,
@@ -455,6 +462,14 @@ export default function App() {
 
     const wth = withdrawals.find((w) => w.id === withdrawalId);
     if (wth) {
+      setTransactions((prev) =>
+        prev.map((tx) =>
+          tx.type === 'withdrawal' && (tx.id.includes(wth.id) || tx.description.includes(wth.accountNumber.slice(-4)))
+            ? { ...tx, status: 'completed' }
+            : tx
+        )
+      );
+
       const approveNtf: NotificationItem = {
         id: `NTF-${Date.now()}`,
         userId: wth.userId,
@@ -472,11 +487,32 @@ export default function App() {
   const handleAdminRejectWithdrawal = (withdrawalId: string, reason: string) => {
     const wth = withdrawals.find((w) => w.id === withdrawalId);
     if (wth) {
-      // Refund user balance
+      // Refund user balance & persist
+      const newBal = user.balance + wth.amount;
       setUser((prev) => ({
         ...prev,
-        balance: prev.balance + wth.amount
+        balance: newBal
       }));
+      persistUserBalance(wth.userId, newBal);
+
+      setTransactions((prev) =>
+        prev.map((tx) =>
+          tx.type === 'withdrawal' && (tx.id.includes(wth.id) || tx.description.includes(wth.accountNumber.slice(-4)))
+            ? { ...tx, status: 'rejected', description: `${tx.description} (Rejected: ${reason})` }
+            : tx
+        )
+      );
+
+      const rejectNtf: NotificationItem = {
+        id: `NTF-${Date.now()}`,
+        userId: wth.userId,
+        title: `❌ Withdrawal Rejected (₹${wth.amount})`,
+        message: `Your withdrawal of ₹${wth.amount} was rejected. Reason: ${reason}. Amount refunded to wallet.`,
+        type: 'withdrawal',
+        date: 'Just now',
+        read: false
+      };
+      setNotifications((prev) => [rejectNtf, ...prev]);
     }
 
     setWithdrawals((prev) =>
@@ -612,6 +648,26 @@ export default function App() {
     };
     setNotifications((prev) => [ntf, ...prev]);
     triggerConfetti();
+  };
+
+  const handleUpdateUserSettings = async (newSettings: UserSettings) => {
+    setUser((prev) => ({
+      ...prev,
+      settings: newSettings
+    }));
+
+    soundFx.setBgMusicEnabled(newSettings.bgMusicEnabled ?? true);
+    soundFx.setSoundEffectsEnabled(newSettings.soundEffectsEnabled ?? true);
+    soundFx.setHapticEnabled(newSettings.hapticEnabled ?? true);
+
+    if (user?.id) {
+      try {
+        const userRef = doc(db, 'users', user.id);
+        await setDoc(userRef, { settings: newSettings }, { merge: true });
+      } catch (err) {
+        console.error('Error persisting user settings to Firestore:', err);
+      }
+    }
   };
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
@@ -826,6 +882,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onClaimVipBonus={handleClaimVipBonus}
                 onOpenAdmin={() => setIsAdminMode(true)}
+                onUpdateSettings={handleUpdateUserSettings}
               />
             )}
           </>

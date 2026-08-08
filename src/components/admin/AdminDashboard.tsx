@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
@@ -52,6 +52,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddTransaction
 }) => {
   const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'wallet' | 'audit'>('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [manualDigits, setManualDigits] = useState<{ [drawId: string]: string }>({});
   const [userSearchTerm, setUserSearchTerm] = useState<string>('');
@@ -255,49 +256,164 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <p className="text-xs font-semibold text-slate-900/80">Manage deposits, withdrawals, draw winners, user accounts, and security audit logs.</p>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-950/20 backdrop-blur-md p-2 rounded-2xl border border-slate-950/20">
-          <div className="text-right px-2">
-            <span className="text-[10px] uppercase font-bold text-slate-900/90 block">System Net Revenue</span>
-            <span className="text-lg font-black text-white font-mono">₹{totalRevenue.toLocaleString('en-IN')}</span>
+        <div className="flex items-center gap-2">
+          {/* Collapsible Sidebar Menu Toggle Button */}
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setIsSidebarOpen(true);
+            }}
+            className="px-4 py-2.5 bg-slate-950 text-amber-400 hover:text-white font-mono font-black text-xs rounded-2xl border border-amber-500/40 shadow-xl flex items-center gap-2 transition-all hover:bg-slate-900"
+          >
+            <Menu className="w-5 h-5 text-amber-400" />
+            <span>ADMIN MENU</span>
+            {(pendingDepositsCount > 0 || pendingWithdrawalsCount > 0) && (
+              <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                {pendingDepositsCount + pendingWithdrawalsCount}
+              </span>
+            )}
+          </button>
+
+          <div className="bg-slate-950/20 backdrop-blur-md p-2 rounded-2xl border border-slate-950/20">
+            <div className="text-right px-2">
+              <span className="text-[10px] uppercase font-bold text-slate-900/90 block">System Net Revenue</span>
+              <span className="text-lg font-black text-white font-mono">₹{totalRevenue.toLocaleString('en-IN')}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Admin Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800">
-        {[
-          { id: 'overview', label: 'Dashboard & Charts', icon: Activity },
-          { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle },
-          { id: 'withdrawals', label: 'Withdrawal Requests', count: pendingWithdrawalsCount, icon: ArrowUpCircle },
-          { id: 'draws', label: 'Draws & Winners', icon: Trophy },
-          { id: 'users', label: 'User Directory', icon: Users },
-          { id: 'wallet', label: 'Wallet Manager', icon: Wallet },
-          { id: 'audit', label: 'System Audit Logs', icon: FileText }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = adminTab === tab.id;
+      {/* Admin Navigation Bar - Quick Pinned Navigation */}
+      <div className="flex items-center justify-between gap-2 overflow-x-auto pb-2 border-b border-slate-800">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {[
+            { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'deposits', label: 'Deposits', count: pendingDepositsCount, icon: ArrowDownCircle },
+            { id: 'withdrawals', label: 'Withdrawals', count: pendingWithdrawalsCount, icon: ArrowUpCircle },
+            { id: 'draws', label: 'Draw Winners', icon: Trophy },
+            { id: 'users', label: 'Users Directory', icon: Users },
+            { id: 'wallet', label: 'Wallet Manager', icon: Wallet },
+            { id: 'audit', label: 'Audit Logs', icon: FileText }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = adminTab === tab.id;
 
-          return (
-            <button
-              key={tab.id}
-              onClick={() => { soundFx.playClick(); setAdminTab(tab.id as typeof adminTab); }}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-mono font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                isActive
-                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20'
-                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-              {tab.count && tab.count > 0 ? (
-                <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-bounce">
-                  {tab.count}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={tab.id}
+                onClick={() => { soundFx.playClick(); setAdminTab(tab.id as typeof adminTab); }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
+                  isActive
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                {tab.count && tab.count > 0 ? (
+                  <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-bounce">
+                    {tab.count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Modern Collapsible Drawer Sidebar Modal */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex justify-start animate-in fade-in duration-200">
+          <div className="w-80 bg-slate-900 border-r border-amber-500/30 h-full p-6 flex flex-col justify-between shadow-2xl relative animate-in slide-in-from-left duration-200">
+            <div className="space-y-6">
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-mono font-black">
+                    BG
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white font-mono">BETGURU ADMIN</h3>
+                    <span className="text-[10px] font-bold text-amber-400 uppercase font-mono">Control Sidebar</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setIsSidebarOpen(false);
+                  }}
+                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Navigation Items */}
+              <div className="space-y-1 font-mono">
+                {[
+                  { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle, desc: 'Verify user payment UTR slips' },
+                  { id: 'withdrawals', label: 'Withdrawal Requests', count: pendingWithdrawalsCount, icon: ArrowUpCircle, desc: 'Approve user bank payouts' },
+                  { id: 'draws', label: 'Draws & Winners', icon: Trophy, desc: 'Set live winning digits' },
+                  { id: 'users', label: 'User Directory', icon: Users, desc: 'Firestore accounts & limits' },
+                  { id: 'wallet', label: 'Wallet Manager', icon: Wallet, desc: 'Credit / deduct main balance' },
+                  { id: 'audit', label: 'System Audit Logs', icon: FileText, desc: 'Administrative action history' }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isActive = adminTab === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        soundFx.playClick();
+                        setAdminTab(item.id as typeof adminTab);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full p-3 rounded-2xl transition-all flex items-center justify-between text-left ${
+                        isActive
+                          ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20'
+                          : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl ${isActive ? 'bg-slate-950 text-amber-400' : 'bg-slate-900 text-slate-400'}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold">{item.label}</div>
+                          <div className={`text-[10px] ${isActive ? 'text-slate-900/80 font-medium' : 'text-slate-400'}`}>{item.desc}</div>
+                        </div>
+                      </div>
+
+                      {item.count && item.count > 0 ? (
+                        <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce">
+                          {item.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sidebar Footer */}
+            <div className="border-t border-slate-800 pt-4 space-y-2 font-mono">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Active Admin Session:</span>
+                <span className="text-amber-400 font-bold">{user.name}</span>
+              </div>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors"
+              >
+                Close Menu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: OVERVIEW & METRICS */}
       {adminTab === 'overview' && (

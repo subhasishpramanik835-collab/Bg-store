@@ -201,7 +201,20 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
   // Filter & Search Logic
   const filteredTransactions = transactions
     .filter((tx) => {
-      if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
+      if (typeFilter === 'deposit') {
+        if (tx.type !== 'deposit') return false;
+      } else if (typeFilter === 'withdrawal') {
+        if (tx.type !== 'withdrawal') return false;
+      } else if (typeFilter === 'roulette') {
+        if (tx.type !== 'roulette_bet' && tx.type !== 'roulette_win' && !tx.description.toLowerCase().includes('roulette')) return false;
+      } else if (typeFilter === 'ticket') {
+        if (tx.type !== 'ticket_buy' && tx.type !== 'win_payout' && tx.type !== 'win' && !tx.description.toLowerCase().includes('ticket')) return false;
+      } else if (typeFilter === 'bonus') {
+        if (tx.type !== 'wheel_bonus' && tx.type !== 'admin_bonus' && tx.type !== 'vip_bonus' && tx.type !== 'admin_deduction' && !tx.description.toLowerCase().includes('bonus') && !tx.description.toLowerCase().includes('reward') && !tx.description.toLowerCase().includes('voucher')) return false;
+      } else if (typeFilter !== 'all') {
+        if (tx.type !== typeFilter) return false;
+      }
+
       if (statusFilter !== 'all' && tx.status !== statusFilter) return false;
       if (searchTerm.trim() !== '') {
         const query = searchTerm.toLowerCase();

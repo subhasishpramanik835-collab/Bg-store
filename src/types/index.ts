@@ -3,6 +3,12 @@ export type PaymentMethodType = 'phonepe' | 'gpay' | 'paytm' | 'upi';
 export type TransactionStatus = 'pending' | 'approved' | 'rejected';
 export type TicketStatus = 'active' | 'win' | 'loss';
 
+export interface UserSettings {
+  bgMusicEnabled?: boolean;
+  soundEffectsEnabled?: boolean;
+  hapticEnabled?: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -21,6 +27,7 @@ export interface User {
   lastSpinTime?: number; // timestamp of last lucky wheel spin
   totalReferrals?: number;
   role?: 'user' | 'admin';
+  settings?: UserSettings;
 }
 
 export interface WalletTransaction {

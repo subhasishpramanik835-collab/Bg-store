@@ -1,8 +1,15 @@
-// Web Audio API Synthesizer for UI audio effects
+// Web Audio API Synthesizer for UI audio effects, background music, and haptic feedback
 
 class SoundManager {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
+  private bgMusicEnabled: boolean = true;
+  private soundEffectsEnabled: boolean = true;
+  private hapticEnabled: boolean = true;
+
+  private bgOsc1: OscillatorNode | null = null;
+  private bgOsc2: OscillatorNode | null = null;
+  private bgGainNode: GainNode | null = null;
 
   private initCtx() {
     if (!this.ctx && typeof window !== 'undefined') {
@@ -18,6 +25,11 @@ class SoundManager {
 
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
+    if (this.isMuted) {
+      this.stopBgMusic();
+    } else if (this.bgMusicEnabled) {
+      this.startBgMusic();
+    }
     return this.isMuted;
   }
 
@@ -25,8 +37,101 @@ class SoundManager {
     return this.isMuted;
   }
 
+  public setSoundEffectsEnabled(enabled: boolean) {
+    this.soundEffectsEnabled = enabled;
+  }
+
+  public getSoundEffectsEnabled(): boolean {
+    return this.soundEffectsEnabled;
+  }
+
+  public setHapticEnabled(enabled: boolean) {
+    this.hapticEnabled = enabled;
+  }
+
+  public getHapticEnabled(): boolean {
+    return this.hapticEnabled;
+  }
+
+  public setBgMusicEnabled(enabled: boolean) {
+    this.bgMusicEnabled = enabled;
+    if (enabled && !this.isMuted) {
+      this.startBgMusic();
+    } else {
+      this.stopBgMusic();
+    }
+  }
+
+  public getBgMusicEnabled(): boolean {
+    return this.bgMusicEnabled;
+  }
+
+  public triggerHaptic(duration: number | number[] = 30) {
+    if (this.hapticEnabled && typeof window !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(duration);
+      } catch (e) {
+        // Haptics not supported or blocked
+      }
+    }
+  }
+
+  public startBgMusic() {
+    if (!this.bgMusicEnabled || this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      if (this.bgOsc1) return; // Already playing
+
+      const now = this.ctx.currentTime;
+      this.bgOsc1 = this.ctx.createOscillator();
+      this.bgOsc2 = this.ctx.createOscillator();
+      this.bgGainNode = this.ctx.createGain();
+
+      this.bgOsc1.type = 'sine';
+      this.bgOsc1.frequency.setValueAtTime(130.81, now); // C3 chord tone
+
+      this.bgOsc2.type = 'triangle';
+      this.bgOsc2.frequency.setValueAtTime(196.00, now); // G3 chord tone
+
+      // Soft background volume
+      this.bgGainNode.gain.setValueAtTime(0.015, now);
+
+      this.bgOsc1.connect(this.bgGainNode);
+      this.bgOsc2.connect(this.bgGainNode);
+      this.bgGainNode.connect(this.ctx.destination);
+
+      this.bgOsc1.start(now);
+      this.bgOsc2.start(now);
+    } catch (e) {
+      console.warn('BG music playback error', e);
+    }
+  }
+
+  public stopBgMusic() {
+    try {
+      if (this.bgOsc1) {
+        this.bgOsc1.stop();
+        this.bgOsc1.disconnect();
+        this.bgOsc1 = null;
+      }
+      if (this.bgOsc2) {
+        this.bgOsc2.stop();
+        this.bgOsc2.disconnect();
+        this.bgOsc2 = null;
+      }
+      if (this.bgGainNode) {
+        this.bgGainNode.disconnect();
+        this.bgGainNode = null;
+      }
+    } catch (e) {
+      console.warn('BG music stop error', e);
+    }
+  }
+
   public playClick() {
-    if (this.isMuted) return;
+    this.triggerHaptic(15);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -47,7 +152,8 @@ class SoundManager {
   }
 
   public playCoin() {
-    if (this.isMuted) return;
+    this.triggerHaptic([30, 40, 50]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -82,7 +188,8 @@ class SoundManager {
   }
 
   public playWinFanfare() {
-    if (this.isMuted) return;
+    this.triggerHaptic([50, 50, 100, 150]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -109,7 +216,8 @@ class SoundManager {
   }
 
   public playCountdownTick() {
-    if (this.isMuted) return;
+    this.triggerHaptic(10);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -130,7 +238,8 @@ class SoundManager {
   }
 
   public playSpinWhoosh() {
-    if (this.isMuted) return;
+    this.triggerHaptic(20);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -169,7 +278,8 @@ class SoundManager {
   }
 
   public playBallClick() {
-    if (this.isMuted) return;
+    this.triggerHaptic(15);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
@@ -191,12 +301,12 @@ class SoundManager {
   }
 
   public playCheer() {
-    if (this.isMuted) return;
+    this.triggerHaptic([40, 60, 80, 100]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
-      // Synthesize a cheerful major chord fanfare
       const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.51];
       freqs.forEach((freq, idx) => {
         if (!this.ctx) return;
@@ -219,7 +329,8 @@ class SoundManager {
   }
 
   public playSpinTick() {
-    if (this.isMuted) return;
+    this.triggerHaptic(10);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
     try {
       this.initCtx();
       if (!this.ctx) return;
