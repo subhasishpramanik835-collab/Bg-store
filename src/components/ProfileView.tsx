@@ -19,6 +19,7 @@ interface ProfileViewProps {
   onClaimVipBonus?: (bonusAmount: number) => void;
   onOpenAdmin?: () => void;
   onUpdateSettings?: (newSettings: UserSettings) => void;
+  onOpenSettings?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -32,7 +33,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onLogout,
   onClaimVipBonus,
   onOpenAdmin,
-  onUpdateSettings
+  onUpdateSettings,
+  onOpenSettings
 }) => {
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
@@ -41,7 +43,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [hasClaimedWeeklyBonus, setHasClaimedWeeklyBonus] = useState<boolean>(false);
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<any>(null);
-  const [showSettingsCard, setShowSettingsCard] = useState<boolean>(true);
+  const [showVipModal, setShowVipModal] = useState<boolean>(false);
 
   const [settings, setSettings] = useState<UserSettings>({
     bgMusicEnabled: user.settings?.bgMusicEnabled ?? true,
@@ -132,10 +134,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         
         {/* VIP Badge fixed in Top Right Corner */}
         <div className="absolute top-3 right-3 sm:top-4 sm:right-5 z-20 flex items-center gap-1.5">
-          <div className={`px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-2xl flex items-center gap-1.5 font-mono text-xs font-black shadow-xl border backdrop-blur-md transition-all hover:scale-105 ${currentTierInfo.badgeBg}`}>
+          <button
+            onClick={() => { soundFx.playClick(); setShowVipModal(true); }}
+            className={`px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-2xl flex items-center gap-1.5 font-mono text-xs font-black shadow-xl border backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer ${currentTierInfo.badgeBg}`}
+            title="Tap to view VIP Club & Loyalty Rewards"
+          >
             <Crown className="w-4 h-4 text-amber-300 animate-pulse" />
             <span className="uppercase tracking-wider font-extrabold">{currentLevel} VIP</span>
-          </div>
+          </button>
         </div>
 
         {/* Ambient Gold Glow */}
@@ -169,10 +175,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="space-y-1">
               <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
                 <h2 className="text-xl sm:text-2xl font-black text-white font-mono">{user.name}</h2>
-                <span className="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1 font-mono">
+                <button
+                  onClick={() => { soundFx.playClick(); setShowVipModal(true); }}
+                  className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1 font-mono cursor-pointer transition-all hover:scale-105"
+                  title="Tap to view VIP Club"
+                >
                   <Award className="w-3 h-3 text-amber-400" />
                   <span>{vipPts.toLocaleString()} VIP PTS</span>
-                </span>
+                </button>
                 {isAdminUser && (
                   <span className="bg-rose-500/20 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-rose-500/40 flex items-center gap-1 font-mono uppercase">
                     <Shield className="w-3 h-3" />
@@ -259,11 +269,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <button
                 onClick={() => {
                   soundFx.playClick();
-                  const elem = document.getElementById('settings-menu-card');
-                  if (elem) elem.scrollIntoView({ behavior: 'smooth' });
-                  setShowSettingsCard(true);
+                  if (onOpenSettings) {
+                    onOpenSettings();
+                  }
                 }}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 title="App Settings & Preferences"
               >
                 <Settings className="w-4 h-4 text-amber-400" />
@@ -312,204 +322,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         </div>
 
-      </div>
-
-      {/* VIP MEMBERSHIP & TIER PROGRESSION CARD */}
-      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-lg">
-              <Crown className="w-6 h-6 text-amber-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-black text-white font-mono uppercase">VIP CLUB & LOYALTY REWARDS</h3>
-                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${currentTierInfo.badgeBg}`}>
-                  {currentLevel}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 font-mono">Earn 1 VIP Point for every ₹100 bet on Lottery & Roulette</p>
-            </div>
-          </div>
-
-          {/* Claim Weekly Bonus Button */}
-          <button
-            onClick={handleClaimBonus}
-            disabled={hasClaimedWeeklyBonus || currentTierInfo.weeklyBonusAmount <= 0}
-            className={`px-5 py-2.5 rounded-2xl font-black font-mono text-xs flex items-center gap-2 transition-all shadow-lg ${
-              hasClaimedWeeklyBonus
-                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                : currentTierInfo.weeklyBonusAmount > 0
-                ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 hover:scale-105 active:scale-95 shadow-amber-500/30'
-                : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-amber-500/30'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 fill-current" />
-            <span>
-              {hasClaimedWeeklyBonus
-                ? 'WEEKLY BONUS CLAIMED'
-                : currentTierInfo.weeklyBonusAmount > 0
-                ? `CLAIM WEEKLY BONUS (₹${currentTierInfo.weeklyBonusAmount})`
-                : 'UPGRADE TO UNLOCK WEEKLY BONUS'}
-            </span>
-          </button>
-        </div>
-
-        {/* Tier Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-slate-300 font-bold">
-              VIP Points: <strong className="text-amber-400">{vipPts.toLocaleString()} PTS</strong>
-            </span>
-            {nextTier ? (
-              <span className="text-slate-400">
-                Next Tier: <strong className="text-amber-300">{nextTier.level}</strong> ({pointsNeeded.toLocaleString()} pts needed)
-              </span>
-            ) : (
-              <span className="text-emerald-400 font-bold">🎉 MAXIMUM PLATINUM VIP STATUS REACHED</span>
-            )}
-          </div>
-
-          <div className="w-full h-3 bg-slate-950 rounded-full border border-slate-800 overflow-hidden p-0.5">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 transition-all duration-500"
-              style={{ width: `${progressPercent}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {/* VIP Tier Benefits Matrix */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-          {Object.values(VIP_TIERS).map((tier) => {
-            const isCurrent = tier.level === currentLevel;
-            return (
-              <div
-                key={tier.level}
-                className={`p-3 rounded-2xl border transition-all ${
-                  isCurrent
-                    ? 'bg-amber-500/10 border-amber-500 shadow-lg shadow-amber-500/10'
-                    : 'bg-slate-950/60 border-slate-800 opacity-80'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-xs font-black font-mono ${tier.color}`}>{tier.level}</span>
-                  {isCurrent && <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase">YOU</span>}
-                </div>
-                <div className="text-[11px] font-mono text-slate-400 space-y-1">
-                  <div>Limit: <strong className="text-slate-200">₹{tier.dailyWithdrawalLimit.toLocaleString()}/day</strong></div>
-                  <div>Weekly Bonus: <strong className="text-emerald-400">₹{tier.weeklyBonusAmount}</strong></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* APP SETTINGS & PREFERENCES MENU CARD */}
-      <div id="settings-menu-card" className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
-              <Settings className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-white font-mono uppercase">SETTINGS & GAME PREFERENCES</h3>
-              <p className="text-xs text-slate-400 font-mono">Independently control background music, game sounds, and touch haptics</p>
-            </div>
-          </div>
-          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full uppercase">
-            FIRESTORE SYNCED
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* 1. Background Music */}
-          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl border transition-colors ${
-                settings.bgMusicEnabled ?? true
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-500 border-slate-800'
-              }`}>
-                <Music className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-white font-mono">Background Music</h4>
-                <p className="text-[10px] text-slate-400 font-mono">
-                  {settings.bgMusicEnabled ?? true ? 'Playing ambient synth' : 'Music disabled'}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleToggleSetting('bgMusicEnabled')}
-              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
-                settings.bgMusicEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
-              }`}
-              title="Toggle Background Music"
-            >
-              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
-            </button>
-          </div>
-
-          {/* 2. Sound Effects */}
-          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl border transition-colors ${
-                settings.soundEffectsEnabled ?? true
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-500 border-slate-800'
-              }`}>
-                {settings.soundEffectsEnabled ?? true ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-white font-mono">Game Sound Effects</h4>
-                <p className="text-[10px] text-slate-400 font-mono">
-                  {settings.soundEffectsEnabled ?? true ? 'Spin whoosh & fanfares ON' : 'Game FX muted'}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleToggleSetting('soundEffectsEnabled')}
-              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
-                settings.soundEffectsEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
-              }`}
-              title="Toggle Game Sound Effects"
-            >
-              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
-            </button>
-          </div>
-
-          {/* 3. Haptic Feedback */}
-          <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl border transition-colors ${
-                settings.hapticEnabled ?? true
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                  : 'bg-slate-900 text-slate-500 border-slate-800'
-              }`}>
-                <Vibrate className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-white font-mono">Haptic Vibration</h4>
-                <p className="text-[10px] text-slate-400 font-mono">
-                  {settings.hapticEnabled ?? true ? 'Touch vibration feedback ON' : 'Vibration disabled'}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleToggleSetting('hapticEnabled')}
-              className={`w-12 h-6 rounded-full transition-all p-0.5 flex items-center cursor-pointer ${
-                settings.hapticEnabled ?? true ? 'bg-amber-500 justify-end' : 'bg-slate-800 justify-start'
-              }`}
-              title="Toggle Haptic Feedback"
-            >
-              <span className="w-5 h-5 rounded-full bg-slate-950 shadow-md"></span>
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* History Tabs Navigation */}
@@ -906,6 +718,120 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             transaction={selectedVoucherTx}
             onClose={() => setSelectedVoucherTx(null)}
           />
+        </div>
+      )}
+
+      {/* VIP Club Modal - Accessible ONLY by tapping VIP badge */}
+      {showVipModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => { soundFx.playClick(); setShowVipModal(false); }}
+              className="absolute top-4 right-4 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <XCircle className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-lg">
+                <Crown className="w-6 h-6 text-amber-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-black text-white font-mono uppercase">VIP CLUB & LOYALTY REWARDS</h3>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${currentTierInfo.badgeBg}`}>
+                    {currentLevel}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 font-mono">Earn 1 VIP Point for every ₹100 bet on Lottery & Roulette</p>
+              </div>
+            </div>
+
+            {/* Claim Weekly Bonus */}
+            <div className="flex items-center justify-between bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <h4 className="text-xs font-bold text-white font-mono">Weekly Tier Payout</h4>
+                <p className="text-[11px] text-slate-400 font-mono">Current Tier Bonus: ₹{currentTierInfo.weeklyBonusAmount}</p>
+              </div>
+
+              <button
+                onClick={handleClaimBonus}
+                disabled={hasClaimedWeeklyBonus || currentTierInfo.weeklyBonusAmount <= 0}
+                className={`px-4 py-2 rounded-xl font-black font-mono text-xs flex items-center gap-1.5 transition-all shadow-lg ${
+                  hasClaimedWeeklyBonus
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                    : currentTierInfo.weeklyBonusAmount > 0
+                    ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 hover:scale-105 active:scale-95'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>
+                  {hasClaimedWeeklyBonus
+                    ? 'CLAIMED'
+                    : currentTierInfo.weeklyBonusAmount > 0
+                    ? `CLAIM ₹${currentTierInfo.weeklyBonusAmount}`
+                    : 'LOCKED'}
+                </span>
+              </button>
+            </div>
+
+            {/* Tier Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-300 font-bold">
+                  VIP Points: <strong className="text-amber-400">{vipPts.toLocaleString()} PTS</strong>
+                </span>
+                {nextTier ? (
+                  <span className="text-slate-400">
+                    Next Tier: <strong className="text-amber-300">{nextTier.level}</strong> ({pointsNeeded.toLocaleString()} pts needed)
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold">🎉 PLATINUM VIP STATUS REACHED</span>
+                )}
+              </div>
+
+              <div className="w-full h-3 bg-slate-950 rounded-full border border-slate-800 overflow-hidden p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* VIP Tier Benefits Matrix */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 font-mono">
+              {Object.values(VIP_TIERS).map((tier) => {
+                const isCurrent = tier.level === currentLevel;
+                return (
+                  <div
+                    key={tier.level}
+                    className={`p-3 rounded-2xl border transition-all ${
+                      isCurrent
+                        ? 'bg-amber-500/10 border-amber-500 shadow-lg shadow-amber-500/10'
+                        : 'bg-slate-950/60 border-slate-800 opacity-80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-xs font-black ${tier.color}`}>{tier.level}</span>
+                      {isCurrent && <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase">YOU</span>}
+                    </div>
+                    <div className="text-[11px] text-slate-400 space-y-1">
+                      <div>Limit: <strong className="text-slate-200">₹{tier.dailyWithdrawalLimit.toLocaleString()}/day</strong></div>
+                      <div>Weekly Bonus: <strong className="text-emerald-400">₹{tier.weeklyBonusAmount}</strong></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => { soundFx.playClick(); setShowVipModal(false); }}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-amber-300 font-mono font-bold text-xs rounded-xl transition-all cursor-pointer"
+            >
+              CLOSE VIP CLUB
+            </button>
+          </div>
         </div>
       )}
 

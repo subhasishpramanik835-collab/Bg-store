@@ -20,6 +20,7 @@ import { LiveWinnersTicker } from './components/LiveWinnersTicker';
 import { MyTicketsView } from './components/MyTicketsView';
 import { ResultsView } from './components/ResultsView';
 import { ProfileView } from './components/ProfileView';
+import { SettingsView } from './components/SettingsView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { LiveRoulette } from './components/LiveRoulette';
@@ -40,7 +41,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialState.notifications);
 
   // Navigation & Modals UI state
-  const [activeTab, setActiveTab] = useState<NavTab>('home');
+  const [activeTab, setActiveTab] = useState<NavTab | 'settings'>('home');
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
   const [isDepositOpen, setIsDepositOpen] = useState<boolean>(false);
   const [isWithdrawOpen, setIsWithdrawOpen] = useState<boolean>(false);
@@ -74,6 +75,24 @@ export default function App() {
       await setDoc(txRef, tx, { merge: true });
     } catch (err) {
       console.error('Error persisting transaction to Firestore:', err);
+    }
+  };
+
+  const persistDeposit = async (dep: DepositRequest) => {
+    try {
+      const depRef = doc(db, 'deposits', dep.id);
+      await setDoc(depRef, dep, { merge: true });
+    } catch (err) {
+      console.error('Error persisting deposit to Firestore:', err);
+    }
+  };
+
+  const persistWithdrawal = async (wth: WithdrawalRequest) => {
+    try {
+      const wthRef = doc(db, 'withdrawals', wth.id);
+      await setDoc(wthRef, wth, { merge: true });
+    } catch (err) {
+      console.error('Error persisting withdrawal to Firestore:', err);
     }
   };
 
@@ -172,6 +191,24 @@ export default function App() {
           }, (err) => {
             console.warn('Real-time transactions snapshot notice:', err.message);
           });
+
+          // Real-time listener for Deposits collection across admin/users
+          const unsubDeposits = onSnapshot(collection(db, 'deposits'), (snap) => {
+            if (!snap.empty) {
+              const list = snap.docs.map((d) => d.data() as DepositRequest);
+              list.sort((a, b) => (b.id > a.id ? 1 : -1));
+              setDeposits(list);
+            }
+          }, (err) => console.warn('Real-time deposits snapshot notice:', err.message));
+
+          // Real-time listener for Withdrawals collection across admin/users
+          const unsubWithdrawals = onSnapshot(collection(db, 'withdrawals'), (snap) => {
+            if (!snap.empty) {
+              const list = snap.docs.map((d) => d.data() as WithdrawalRequest);
+              list.sort((a, b) => (b.id > a.id ? 1 : -1));
+              setWithdrawals(list);
+            }
+          }, (err) => console.warn('Real-time withdrawals snapshot notice:', err.message));
 
         } catch (e) {
           console.error('Error syncing user with Firestore:', e);
@@ -336,6 +373,7 @@ export default function App() {
     };
 
     setDeposits((prev) => [newDep, ...prev]);
+    persistDeposit(newDep);
 
     // Add user notification
     const depNtf: NotificationItem = {
@@ -355,9 +393,11 @@ export default function App() {
     const dep = deposits.find((d) => d.id === depositId);
     if (!dep || dep.status !== 'pending') return;
 
+    const updatedDep: DepositRequest = { ...dep, status: 'approved' };
     setDeposits((prev) =>
-      prev.map((d) => (d.id === depositId ? { ...d, status: 'approved' } : d))
+      prev.map((d) => (d.id === depositId ? updatedDep : d))
     );
+    persistDeposit(updatedDep);
 
     // Add funds to user wallet & persist
     const newBal = user.balance + dep.amount;
@@ -397,10 +437,13 @@ export default function App() {
   // Handle Admin Reject Deposit
   const handleAdminRejectDeposit = (depositId: string, reason: string) => {
     const dep = deposits.find((d) => d.id === depositId);
-    setDeposits((prev) =>
-      prev.map((d) => (d.id === depositId ? { ...d, status: 'rejected', rejectReason: reason } : d))
-    );
     if (dep) {
+      const updatedDep: DepositRequest = { ...dep, status: 'rejected', rejectReason: reason };
+      setDeposits((prev) =>
+        prev.map((d) => (d.id === depositId ? updatedDep : d))
+      );
+      persistDeposit(updatedDep);
+
       const rejTx: WalletTransaction = {
         id: `TXN-DEP-REJ-${Date.now().toString().slice(-4)}`,
         userId: dep.userId,
@@ -439,6 +482,7 @@ export default function App() {
     };
 
     setWithdrawals((prev) => [newWth, ...prev]);
+    persistWithdrawal(newWth);
 
     // Add wallet ledger tx
     const wthTx: WalletTransaction = {
@@ -456,12 +500,14 @@ export default function App() {
 
   // Handle Admin Approve Withdrawal
   const handleAdminApproveWithdrawal = (withdrawalId: string) => {
-    setWithdrawals((prev) =>
-      prev.map((w) => (w.id === withdrawalId ? { ...w, status: 'approved' } : w))
-    );
-
     const wth = withdrawals.find((w) => w.id === withdrawalId);
     if (wth) {
+      const updatedWth: WithdrawalRequest = { ...wth, status: 'approved' };
+      setWithdrawals((prev) =>
+        prev.map((w) => (w.id === withdrawalId ? updatedWth : w))
+      );
+      persistWithdrawal(updatedWth);
+
       setTransactions((prev) =>
         prev.map((tx) =>
           tx.type === 'withdrawal' && (tx.id.includes(wth.id) || tx.description.includes(wth.accountNumber.slice(-4)))
@@ -487,6 +533,12 @@ export default function App() {
   const handleAdminRejectWithdrawal = (withdrawalId: string, reason: string) => {
     const wth = withdrawals.find((w) => w.id === withdrawalId);
     if (wth) {
+      const updatedWth: WithdrawalRequest = { ...wth, status: 'rejected', rejectReason: reason };
+      setWithdrawals((prev) =>
+        prev.map((w) => (w.id === withdrawalId ? updatedWth : w))
+      );
+      persistWithdrawal(updatedWth);
+
       // Refund user balance & persist
       const newBal = user.balance + wth.amount;
       setUser((prev) => ({
@@ -514,10 +566,6 @@ export default function App() {
       };
       setNotifications((prev) => [rejectNtf, ...prev]);
     }
-
-    setWithdrawals((prev) =>
-      prev.map((w) => (w.id === withdrawalId ? { ...w, status: 'rejected', rejectReason: reason } : w))
-    );
   };
 
   // Handle Ticket Purchase Confirmation
@@ -883,6 +931,15 @@ export default function App() {
                 onClaimVipBonus={handleClaimVipBonus}
                 onOpenAdmin={() => setIsAdminMode(true)}
                 onUpdateSettings={handleUpdateUserSettings}
+                onOpenSettings={() => setActiveTab('settings')}
+              />
+            )}
+
+            {activeTab === 'settings' && (
+              <SettingsView
+                user={user}
+                onUpdateSettings={handleUpdateUserSettings}
+                onBack={() => setActiveTab('profile')}
               />
             )}
           </>
@@ -891,7 +948,7 @@ export default function App() {
 
       {/* Fixed Responsive Bottom Navigation */}
       <BottomNav
-        activeTab={activeTab}
+        activeTab={activeTab === 'settings' ? 'profile' : activeTab}
         onSelectTab={(tab) => {
           setIsAdminMode(false);
           if (tab === 'lucky_wheel') {

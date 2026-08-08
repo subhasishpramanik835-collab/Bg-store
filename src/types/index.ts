@@ -7,6 +7,8 @@ export interface UserSettings {
   bgMusicEnabled?: boolean;
   soundEffectsEnabled?: boolean;
   hapticEnabled?: boolean;
+  fireFxEnabled?: boolean;
+  fontSize?: 'compact' | 'normal' | 'large';
 }
 
 export interface User {
