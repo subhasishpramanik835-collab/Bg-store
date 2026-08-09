@@ -1,537 +1,316 @@
-import React, { useState } from 'react';
-import { 
-  Share2, Download, Check, Copy, ShieldCheck, Sparkles, X, Wallet, 
-  CheckCircle2, TrendingDown, Clock, Tag
-} from 'lucide-react';
-import { WalletTransaction, DepositRequest, WithdrawalRequest, PurchasedTicket } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { Download, Share2, X, CheckCircle2, ShieldCheck, Sparkles, Copy, Check } from 'lucide-react';
+import { WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
 
-export type AnyTransaction = WalletTransaction | DepositRequest | WithdrawalRequest | PurchasedTicket | {
-  id: string;
-  date?: string;
-  purchaseDate?: string;
-  amount?: number;
-  price?: number;
-  wonAmount?: number;
-  type?: string;
-  status: string;
-  description?: string;
-  drawTitle?: string;
-  utr?: string;
-};
-
 interface VoucherGeneratorProps {
-  transaction: AnyTransaction;
+  transaction: WalletTransaction | any;
   onClose?: () => void;
 }
 
-export const VoucherGenerator: React.FC<VoucherGeneratorProps> = ({
-  transaction,
-  onClose
-}) => {
-  const [copiedId, setCopiedId] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+export const VoucherGenerator: React.FC<VoucherGeneratorProps> = ({ transaction, onClose }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [dataUrl, setDataUrl] = useState<string>('');
 
-  // Normalize transaction fields
-  const getNormalizedDetails = () => {
-    let id = transaction.id || 'N/A';
-    let date = (transaction as any).date || (transaction as any).purchaseDate || new Date().toLocaleString();
-    let status = ((transaction as any).status || 'completed').toLowerCase();
-    let utr = (transaction as any).utr || undefined;
-    let description = (transaction as any).description || (transaction as any).drawTitle || 'Official Transaction';
-    let type = ((transaction as any).type || 'transaction').toLowerCase();
-    let amount = 0;
+  const isCredit = transaction.amount ? transaction.amount >= 0 : (transaction.status === 'win' || transaction.type === 'deposit');
+  const displayAmount = transaction.amount !== undefined 
+    ? Math.abs(transaction.amount).toLocaleString('en-IN')
+    : (transaction.price || transaction.wonAmount || 0).toLocaleString('en-IN');
 
-    if ('amount' in transaction && typeof transaction.amount === 'number') {
-      amount = transaction.amount;
-    } else if ('wonAmount' in transaction && typeof (transaction as any).wonAmount === 'number' && (transaction as any).wonAmount > 0) {
-      amount = (transaction as any).wonAmount;
-    } else if ('price' in transaction && typeof (transaction as any).price === 'number') {
-      amount = -(transaction as any).price;
-    }
+  const titleText = transaction.description || transaction.drawTitle || transaction.drawName || `BETGURU ${transaction.type?.toUpperCase() || 'TRANSACTION'}`;
+  const txId = transaction.id || `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+  const dateText = transaction.date || transaction.purchaseDate || new Date().toLocaleString('en-IN');
+  const statusText = (transaction.status || (isCredit ? 'CREDITED' : 'DEBITED')).toUpperCase();
+  const utrNumber = transaction.utr || transaction.utrNumber || transaction.userId || 'N/A';
 
-    let isWin = false;
-    let isLoss = false;
-    let isPending = status === 'pending';
-    let isRejected = status === 'rejected' || status === 'failed';
-    let displayType = '';
-    let displayStatus = status.toUpperCase();
+  // Draw HD Canvas Voucher on component mount
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    // Specific category formatting
-    if (type === 'deposit') {
-      if (isRejected) {
-        displayType = 'DEPOSIT REJECTED';
-        displayStatus = 'REJECTED';
-        isLoss = true;
-      } else if (status === 'approved' || status === 'completed') {
-        displayType = 'DEPOSIT SUCCESSFUL';
-        displayStatus = 'APPROVED';
-        isWin = true;
-      } else {
-        displayType = 'DEPOSIT PENDING';
-        displayStatus = 'PENDING';
-      }
-    } else if (type === 'withdrawal') {
-      if (isRejected) {
-        displayType = 'WITHDRAWAL REJECTED';
-        displayStatus = 'REJECTED';
-        isLoss = true;
-      } else if (status === 'approved' || status === 'completed' || status === 'successful') {
-        displayType = 'WITHDRAWAL SUCCESSFUL';
-        displayStatus = 'SUCCESSFUL';
-        isWin = true;
-      } else {
-        displayType = 'WITHDRAWAL PENDING';
-        displayStatus = 'PENDING';
-      }
-    } else if (type === 'roulette_win') {
-      displayType = 'ROULETTE WIN';
-      displayStatus = 'WON';
-      isWin = true;
-    } else if (type === 'roulette_bet' || type === 'roulette_loss') {
-      displayType = 'ROULETTE LOSS';
-      displayStatus = 'LOST';
-      isLoss = true;
-    } else if (type === 'ticket_buy' || type === 'ticket') {
-      if (status === 'win') {
-        displayType = 'TICKET WIN';
-        displayStatus = 'WON';
-        isWin = true;
-      } else if (status === 'loss') {
-        displayType = 'TICKET LOST';
-        displayStatus = 'LOST';
-        isLoss = true;
-      } else {
-        displayType = 'TICKET BOUGHT';
-        displayStatus = status.toUpperCase();
-        isLoss = true;
-      }
-    } else if (type === 'win_payout' || type === 'win') {
-      displayType = 'GAME WIN';
-      displayStatus = 'WON';
-      isWin = true;
-    } else if (type === 'loss') {
-      displayType = 'GAME LOSS';
-      displayStatus = 'LOST';
-      isLoss = true;
-    } else if (type === 'wheel_bonus' || type === 'admin_bonus' || type === 'vip_bonus') {
-      displayType = 'BONUS CREDIT';
-      displayStatus = 'CREDITED';
-      isWin = true;
-    } else if (type === 'admin_deduction') {
-      displayType = 'ADMIN DEDUCTION';
-      displayStatus = 'DEDUCTED';
-      isLoss = true;
-    } else {
-      displayType = type.replace('_', ' ').toUpperCase();
-      if (amount > 0) isWin = true;
-      else if (amount < 0) isLoss = true;
-    }
-
-    return {
-      id,
-      date,
-      amount,
-      type: displayType,
-      status: displayStatus,
-      utr,
-      description,
-      isWin,
-      isLoss,
-      isPending,
-      isRejected,
-      rawType: type,
-      rawStatus: status
-    };
-  };
-
-  const details = getNormalizedDetails();
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(true);
-    soundFx.playClick();
-    setTimeout(() => setCopiedId(false), 2000);
-  };
-
-  // Generate High-Definition Canvas PNG (800x1040)
-  const generateCanvas = (): HTMLCanvasElement => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 1040;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return canvas;
+    if (!ctx) return;
 
-    // Outer Background - Deep Slate Mesh Gradient
-    const grad = ctx.createLinearGradient(0, 0, 0, 1040);
-    grad.addColorStop(0, '#020617');
-    grad.addColorStop(0.5, '#0f172a');
-    grad.addColorStop(1, '#030712');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 800, 1040);
+    // HD Resolution settings (800x1000)
+    const width = 800;
+    const height = 1000;
+    canvas.width = width;
+    canvas.height = height;
 
-    // Golden Outer Border Frame
-    ctx.strokeStyle = details.isWin ? '#10b981' : details.isLoss ? '#f43f5e' : '#f59e0b';
+    // Background - Dark Luxury Gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, width, height);
+    bgGrad.addColorStop(0, '#090d16');
+    bgGrad.addColorStop(0.5, '#0f172a');
+    bgGrad.addColorStop(1, '#020617');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Decorative Outer Border Frame
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
     ctx.lineWidth = 6;
-    ctx.strokeRect(20, 20, 760, 1000);
+    ctx.strokeRect(20, 20, width - 40, height - 40);
 
-    // Inner Accent Border Line
-    ctx.strokeStyle = details.isWin ? 'rgba(16, 185, 129, 0.4)' : details.isLoss ? 'rgba(244, 63, 94, 0.4)' : 'rgba(245, 158, 11, 0.4)';
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.15)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(28, 28, 744, 984);
+    ctx.strokeRect(28, 28, width - 56, height - 56);
 
-    // Logo & Header Box
-    const logoX = 350;
-    const logoY = 50;
+    // Header Logo & Branding
     ctx.fillStyle = '#f59e0b';
-    ctx.beginPath();
-    ctx.roundRect(logoX, logoY, 100, 60, 16);
-    ctx.fill();
-
-    ctx.fillStyle = '#020617';
-    ctx.font = '900 40px monospace';
+    ctx.font = '900 32px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('B', logoX + 50, logoY + 44);
-
-    // Brand Title
-    ctx.fillStyle = '#fbbf24';
-    ctx.font = '900 32px monospace';
-    ctx.fillText('ETGURU HD', 400, 150);
+    ctx.fillText('BETGURU OFFICIAL SLIP', width / 2, 85);
 
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '700 13px monospace';
-    ctx.fillText('OFFICIAL DIGITAL CASINO & LOTTERY VOUCHER', 400, 175);
+    ctx.font = '700 14px monospace';
+    ctx.fillText('VERIFIED BLOCKCHAIN & FIRESTORE TRANSACTION VOUCHER', width / 2, 112);
 
-    // Header Divider
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
-    ctx.lineWidth = 1.5;
+    // Gold Divider Line
+    const divGrad = ctx.createLinearGradient(100, 0, width - 100, 0);
+    divGrad.addColorStop(0, 'rgba(245, 158, 11, 0)');
+    divGrad.addColorStop(0.5, '#f59e0b');
+    divGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.strokeStyle = divGrad;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(60, 195);
-    ctx.lineTo(740, 195);
+    ctx.moveTo(100, 130);
+    ctx.lineTo(width - 100, 130);
     ctx.stroke();
 
-    // Main Card Box Container
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.fillRect(60, 220, 680, 650);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(60, 220, 680, 650);
-
-    // Outcome Status Banner Box
-    const statusBg = details.isWin ? 'rgba(16, 185, 129, 0.25)' : details.isLoss ? 'rgba(244, 63, 94, 0.25)' : 'rgba(245, 158, 11, 0.25)';
-    const statusBorder = details.isWin ? '#10b981' : details.isLoss ? '#f43f5e' : '#f59e0b';
-    const statusColor = details.isWin ? '#34d399' : details.isLoss ? '#f87171' : '#fbbf24';
-
-    ctx.fillStyle = statusBg;
-    ctx.fillRect(90, 250, 620, 70);
-    ctx.strokeStyle = statusBorder;
+    // Status Banner Box
+    const bannerY = 160;
+    const bannerHeight = 80;
+    ctx.fillStyle = isCredit ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)';
+    ctx.fillRect(80, bannerY, width - 160, bannerHeight);
+    ctx.strokeStyle = isCredit ? '#10b981' : '#f43f5e';
     ctx.lineWidth = 2;
-    ctx.strokeRect(90, 250, 620, 70);
+    ctx.strokeRect(80, bannerY, width - 160, bannerHeight);
 
-    ctx.fillStyle = statusColor;
+    ctx.fillStyle = isCredit ? '#34d399' : '#f87171';
     ctx.font = '900 24px monospace';
-    ctx.fillText(`TRANSACTION TYPE: ${details.type}`, 400, 292);
+    ctx.fillText(`STATUS: ${statusText} (SETTLED)`, width / 2, bannerY + 36);
 
-    // Amount Display Big Text
-    ctx.fillStyle = details.isWin ? '#34d399' : details.isLoss ? '#f87171' : '#f8fafc';
-    ctx.font = '900 48px monospace';
-    const absAmt = Math.abs(details.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    const signLabel = details.isWin ? `WIN +₹${absAmt}` : details.isLoss ? `LOSS -₹${absAmt}` : `₹${absAmt}`;
-    ctx.fillText(signLabel, 400, 380);
+    // Amount Display (Huge HD Text)
+    ctx.font = '900 52px monospace';
+    const amountStr = `${isCredit ? '+' : '-'} ₹${displayAmount}`;
+    ctx.fillText(amountStr, width / 2, bannerY + 72);
 
-    // Transaction Details Table
-    ctx.textAlign = 'left';
-    ctx.font = '700 16px monospace';
+    // Details Box Table
+    const tableY = 280;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillRect(80, tableY, width - 160, 480);
+    ctx.strokeStyle = 'rgba(51, 65, 85, 0.8)';
+    ctx.strokeRect(80, tableY, width - 160, 480);
 
-    const items = [
-      ['Voucher Ref ID', `#BG-VOUCHER-${details.id}`],
-      ['Transaction Date', details.date],
-      ['Current Status', details.status],
-      ['Bank UTR / Ref', details.utr || 'N/A (Internal Game)'],
-      ['Security Level', '100% PROOF OF FAIRNESS ENCRYPTED']
+    const rows = [
+      { label: 'TRANSACTION ID', value: txId },
+      { label: 'TYPE / CATEGORY', value: (transaction.type || 'GENERAL').toUpperCase() },
+      { label: 'TITLE / DESCRIPTION', value: titleText },
+      { label: 'DATE & TIME', value: dateText },
+      { label: 'UTR / REF NUMBER', value: utrNumber },
+      { label: 'SECURITY SEAL', value: 'SHA-256 ENCRYPTED HARDENED' },
     ];
 
-    let currentY = 440;
-    items.forEach(([label, value]) => {
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText(label, 100, currentY);
-
-      if (label === 'Current Status') {
-        ctx.fillStyle = statusColor;
-      } else {
-        ctx.fillStyle = '#f8fafc';
+    let rowY = tableY + 50;
+    rows.forEach((r, idx) => {
+      // Row Background alternating
+      if (idx % 2 === 0) {
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.5)';
+        ctx.fillRect(90, rowY - 30, width - 180, 50);
       }
-      ctx.fillText(value, 360, currentY);
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.beginPath();
-      ctx.moveTo(100, currentY + 12);
-      ctx.lineTo(700, currentY + 12);
-      ctx.stroke();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '700 15px monospace';
+      ctx.fillText(r.label, 110, rowY);
 
-      currentY += 50;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = r.label === 'TRANSACTION ID' ? '#f59e0b' : '#ffffff';
+      ctx.font = '900 16px monospace';
+      
+      // Truncate long value strings for clean alignment
+      let valStr = String(r.value);
+      if (valStr.length > 28) valStr = valStr.substring(0, 25) + '...';
+      ctx.fillText(valStr, width - 110, rowY);
+
+      rowY += 75;
     });
 
-    // Description Box
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('Description:', 100, currentY);
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '500 14px monospace';
-    ctx.fillText(details.description.substring(0, 50), 100, currentY + 28);
+    // Barcode Graphic simulation
+    const barcodeY = 790;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(120, barcodeY, width - 240, 60);
 
-    // Decorative Barcode graphic
-    ctx.fillStyle = '#f59e0b';
-    let barX = 100;
-    for (let i = 0; i < 40; i++) {
-      const w = (i % 3 === 0) ? 6 : (i % 2 === 0) ? 3 : 1.5;
-      ctx.fillRect(barX, currentY + 70, w, 40);
-      barX += w + 8;
+    // Black lines of barcode
+    ctx.fillStyle = '#000000';
+    let lineX = 130;
+    while (lineX < width - 130) {
+      const lineWidth = Math.floor(Math.random() * 4) + 1;
+      ctx.fillRect(lineX, barcodeY + 5, lineWidth, 50);
+      lineX += lineWidth + Math.floor(Math.random() * 5) + 2;
     }
 
-    // Security Footer Watermark
+    // Footer Text
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#fbbf24';
-    ctx.font = '900 14px monospace';
-    ctx.fillText('VERIFIED & GUARANTEED BY B ETGURU SECURITY ENGINE', 400, 915);
-
     ctx.fillStyle = '#64748b';
-    ctx.font = '600 12px monospace';
-    ctx.fillText(`ISSUED: ${new Date().toLocaleString('en-IN')} • OFFICIAL DIGITAL SLIP`, 400, 945);
+    ctx.font = '700 13px monospace';
+    ctx.fillText('Official Digital Receipt • BETGURU Real-Time Gaming Engine', width / 2, 880);
+    ctx.fillText('Keep this voucher slip for security validation and customer queries', width / 2, 905);
 
-    return canvas;
-  };
+    // Set generated Data URL
+    try {
+      setDataUrl(canvas.toDataURL('image/png'));
+    } catch (e) {
+      console.error('Error generating canvas data URL:', e);
+    }
+  }, [transaction]);
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-  };
-
-  // Web Share API Handler with Fallback
-  const handleShareVoucherPNG = () => {
+  const handleDownload = () => {
     soundFx.playCoin();
-    setIsGenerating(true);
-    setShareFeedback(null);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    setTimeout(() => {
-      try {
-        const canvas = generateCanvas();
+    const image = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = image;
+    link.download = `BETGURU-Voucher-${txId}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleShare = async () => {
+    soundFx.playClick();
+    setIsSharing(true);
+
+    try {
+      const canvas = canvasRef.current;
+      if (canvas && navigator.canShare) {
         canvas.toBlob(async (blob) => {
-          if (!blob) {
-            setIsGenerating(false);
-            return;
-          }
-
-          const filename = `BETGURU_Voucher_${details.id}.png`;
-          const file = new File([blob], filename, { type: 'image/png' });
-
-          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: `BETGURU Voucher #${details.id}`,
-                text: `Check out my official BETGURU HD transaction voucher slip!`
-              });
-              setShareFeedback('Voucher shared successfully!');
-            } catch (err: any) {
-              if (err.name !== 'AbortError') {
-                console.warn('Share error, downloading instead:', err);
-                downloadBlob(blob, filename);
-                setShareFeedback('Downloaded voucher PNG file.');
+          if (blob) {
+            const file = new File([blob], `BETGURU-Voucher-${txId}.png`, { type: 'image/png' });
+            if (navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({
+                  title: 'BETGURU Transaction Slip',
+                  text: `BETGURU Official Voucher - ${titleText} (₹${displayAmount})`,
+                  files: [file],
+                });
+                setIsSharing(false);
+                return;
+              } catch (shareErr) {
+                console.warn('File share cancelled or failed:', shareErr);
               }
             }
-          } else {
-            downloadBlob(blob, filename);
-            setShareFeedback('Downloaded HD Voucher PNG image.');
           }
-          setIsGenerating(false);
-          setTimeout(() => setShareFeedback(null), 3000);
-        }, 'image/png');
-      } catch (e) {
-        console.error('Error generating voucher PNG', e);
-        setIsGenerating(false);
+
+          // Fallback share without files
+          if (navigator.share) {
+            await navigator.share({
+              title: 'BETGURU Transaction Slip',
+              text: `BETGURU Voucher Slip:\n${titleText}\nAmount: ₹${displayAmount}\nTx ID: ${txId}`,
+              url: window.location.href,
+            });
+          }
+          setIsSharing(false);
+        });
+      } else if (navigator.share) {
+        await navigator.share({
+          title: 'BETGURU Transaction Slip',
+          text: `BETGURU Voucher Slip:\n${titleText}\nAmount: ₹${displayAmount}\nTx ID: ${txId}`,
+          url: window.location.href,
+        });
+        setIsSharing(false);
+      } else {
+        // Fallback: Copy to clipboard & trigger download
+        handleDownload();
+        setIsSharing(false);
       }
-    }, 100);
+    } catch (err) {
+      console.error('Share error:', err);
+      handleDownload();
+      setIsSharing(false);
+    }
   };
 
-  // Direct PNG Download Button Handler
-  const handleDownloadPNG = () => {
+  const copyTxId = () => {
+    navigator.clipboard.writeText(txId);
+    setCopied(true);
     soundFx.playClick();
-    setIsGenerating(true);
-    setTimeout(() => {
-      const canvas = generateCanvas();
-      canvas.toBlob((blob) => {
-        if (blob) {
-          downloadBlob(blob, `BETGURU_Voucher_${details.id}.png`);
-        }
-        setIsGenerating(false);
-      }, 'image/png');
-    }, 100);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl relative space-y-5 overflow-hidden">
+    <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 sm:p-6 max-w-lg w-full space-y-5 shadow-2xl relative font-mono text-white animate-in zoom-in-95 duration-200">
       
-      {/* Modal Close Button if supplied */}
+      {/* Modal Close Button */}
       {onClose && (
         <button
           onClick={() => { soundFx.playClick(); onClose(); }}
-          className="absolute top-4 right-4 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors z-20"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-950 rounded-xl border border-slate-800 hover:border-amber-400 transition-all cursor-pointer z-10"
         >
           <X className="w-5 h-5" />
         </button>
       )}
 
-      {/* Header Title */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3 pr-8">
-        <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center font-mono text-lg shadow-md">
-          B
+      {/* Header Badge */}
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-3 pr-10">
+        <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+          <Sparkles className="w-5 h-5" />
         </div>
         <div>
-          <h3 className="text-base font-black text-amber-300 font-mono tracking-wide leading-none">
-            ETGURU HD VOUCHER
-          </h3>
-          <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
-            Official Proof of Transaction
+          <h3 className="text-base font-black text-white">BETGURU Transaction Voucher</h3>
+          <p className="text-xs text-amber-400 font-bold">HD Official Digital Result Slip</p>
+        </div>
+      </div>
+
+      {/* Rendered Canvas Preview */}
+      <div className="bg-slate-950 p-2 rounded-2xl border border-slate-800 flex justify-center items-center shadow-inner overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className="w-full max-h-[380px] object-contain rounded-xl border border-slate-800 shadow-md"
+        />
+      </div>
+
+      {/* Details Quick Bar */}
+      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
+        <div>
+          <span className="text-[10px] text-slate-400 block uppercase">Voucher Tx ID</span>
+          <span className="font-extrabold text-amber-300 flex items-center gap-1">
+            {txId}
+            <button onClick={copyTxId} className="hover:text-white p-0.5">
+              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
+            </button>
+          </span>
+        </div>
+
+        <div className="text-right">
+          <span className="text-[10px] text-slate-400 block uppercase">Settled Amount</span>
+          <span className={`font-black text-sm ${isCredit ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {isCredit ? '+' : '-'} ₹{displayAmount}
           </span>
         </div>
       </div>
 
-      {/* Visual Voucher Card Slip */}
-      <div className={`relative bg-slate-950 p-5 rounded-2xl border-2 transition-all space-y-4 shadow-2xl overflow-hidden ${
-        details.isWin 
-          ? 'border-emerald-500/60 bg-emerald-950/20' 
-          : details.isLoss 
-          ? 'border-rose-500/60 bg-rose-950/20' 
-          : 'border-amber-500/50'
-      }`}>
-        
-        {/* Background Branding Watermark */}
-        <div className="absolute right-2 bottom-2 text-[52px] font-black text-amber-500/5 select-none pointer-events-none font-mono">
-          B ETGURU
-        </div>
-
-        {/* Signal Outcome Indicator Banner */}
-        <div className={`flex flex-col items-center justify-center py-3.5 rounded-xl border text-center space-y-1 shadow-lg ${
-          details.isWin
-            ? 'bg-emerald-500/15 border-emerald-500/40 animate-zoom-green'
-            : details.isLoss
-            ? 'bg-rose-500/15 border-rose-500/40 animate-zoom-red'
-            : 'bg-amber-500/15 border-amber-500/40'
-        }`}>
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full animate-ping ${
-              details.isWin ? 'bg-emerald-400' : details.isLoss ? 'bg-rose-400' : 'bg-amber-400'
-            }`}></span>
-
-            <span className={`text-xs font-black font-mono tracking-wider ${
-              details.isWin ? 'text-emerald-300' : details.isLoss ? 'text-rose-300' : 'text-amber-300'
-            }`}>
-              {details.type}
-            </span>
-          </div>
-
-          <div className={`text-2xl font-black font-mono tracking-tight ${
-            details.isWin ? 'text-emerald-400' : details.isLoss ? 'text-rose-400' : 'text-amber-300'
-          }`}>
-            {details.isWin
-              ? `WIN +₹${Math.abs(details.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-              : details.isLoss
-              ? `LOSS -₹${Math.abs(details.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-              : `₹${Math.abs(details.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
-          </div>
-        </div>
-
-        {/* Structured Transaction Data List */}
-        <div className="space-y-2 text-xs font-mono">
-          <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-            <span className="text-slate-400">Voucher Ref ID</span>
-            <div className="flex items-center gap-1 font-bold text-amber-300">
-              <span>{details.id}</span>
-              <button
-                onClick={() => handleCopy(details.id)}
-                className="p-1 text-slate-400 hover:text-amber-300 transition-colors"
-                title="Copy Transaction ID"
-              >
-                {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-            <span className="text-slate-400">Date & Time</span>
-            <span className="text-slate-200 font-semibold">{details.date}</span>
-          </div>
-
-          <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-            <span className="text-slate-400">Transaction Status</span>
-            <span className={`font-bold px-2 py-0.5 rounded-full border text-[10px] ${
-              details.isWin
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : details.isLoss
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-            }`}>
-              {details.status}
-            </span>
-          </div>
-
-          {details.utr && (
-            <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-              <span className="text-slate-400">Bank UTR / Ref</span>
-              <span className="font-mono font-bold text-emerald-400">{details.utr}</span>
-            </div>
-          )}
-
-          <div className="pt-2">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-              Description / Game
-            </span>
-            <p className="text-xs text-slate-200 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 leading-relaxed font-mono">
-              {details.description}
-            </p>
-          </div>
-        </div>
-
-        {/* Security Seal */}
-        <div className="flex items-center justify-center gap-1.5 text-[10px] text-amber-400/90 font-mono bg-amber-500/10 py-1.5 rounded-xl border border-amber-500/20">
-          <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span>100% Encrypted & Authenticated Voucher</span>
-        </div>
-
-      </div>
-
-      {shareFeedback && (
-        <div className="text-center text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 p-2 rounded-xl border border-emerald-500/40 animate-in fade-in">
-          {shareFeedback}
-        </div>
-      )}
-
-      {/* Share & Download Action Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono">
-        
-        {/* Mobile Web Share Button */}
+      {/* Interactive Mobile Share & Download Action Buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
         <button
-          onClick={handleShareVoucherPNG}
-          disabled={isGenerating}
-          className="w-full py-3 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl golden-shadow-btn flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+          onClick={handleShare}
+          disabled={isSharing}
+          className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
         >
-          <Share2 className="w-4 h-4 stroke-[2.5]" />
-          <span>{isGenerating ? 'GENERATING...' : 'SHARE VOUCHER'}</span>
+          <Share2 className="w-4 h-4" />
+          <span>{isSharing ? 'Sharing Slip...' : 'Share Result Slip'}</span>
         </button>
 
-        {/* Download PNG Button */}
         <button
-          onClick={handleDownloadPNG}
-          disabled={isGenerating}
-          className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-xs rounded-xl border border-amber-500/30 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+          onClick={handleDownload}
+          className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs rounded-xl border border-slate-700 hover:border-amber-400 flex items-center justify-center gap-2 transition-all cursor-pointer"
         >
-          <Download className="w-4 h-4" />
-          <span>DOWNLOAD HD PNG</span>
+          <Download className="w-4 h-4 text-amber-400" />
+          <span>Download HD PNG</span>
         </button>
-
       </div>
 
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
@@ -62,7 +62,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'users' | 'wallet' | 'audit'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit'>('overview');
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+
+  const copyUserIdToClipboard = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedUserId(id);
+    soundFx.playClick();
+    setTimeout(() => setCopiedUserId(null), 2000);
+  };
+
+  const handleUpdateTicketStatusInFirestore = async (ticketId: string, newStatus: 'win' | 'loss' | 'rejected', ticketPrice?: number, targetUserId?: string) => {
+    soundFx.playClick();
+    try {
+      const ticketRef = doc(db, 'tickets', ticketId);
+      await setDoc(ticketRef, { status: newStatus }, { merge: true });
+
+      if (newStatus === 'rejected' && targetUserId && ticketPrice) {
+        const targetUser = allUsers.find(u => u.id === targetUserId);
+        if (targetUser) {
+          const newBal = (targetUser.balance || 0) + ticketPrice;
+          const userRef = doc(db, 'users', targetUserId);
+          await setDoc(userRef, { balance: newBal }, { merge: true });
+        }
+      }
+      alert(`Ticket #${ticketId} status successfully set to ${newStatus.toUpperCase()} in Firestore!`);
+    } catch (err) {
+      console.error('Error updating ticket status in Firestore:', err);
+      alert('Failed to save ticket status to Firestore.');
+    }
+  };
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [manualDigits, setManualDigits] = useState<{ [drawId: string]: string }>({});
@@ -70,6 +99,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingBalance, setEditingBalance] = useState<string>(user.balance.toString());
   const [editingBonusBalance, setEditingBonusBalance] = useState<string>((user.bonusBalance || 100).toString());
   const [auditNote, setAuditNote] = useState<string>('Manual Admin Adjustment');
+
+  // Financial Transactions Search & Filter Controls
+  const [txSearchTerm, setTxSearchTerm] = useState<string>('');
+  const [txStatusFilter, setTxStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [txTypeFilter, setTxTypeFilter] = useState<'all' | 'deposits' | 'withdrawals'>('all');
+
+  const filteredDeposits = deposits.filter((dep) => {
+    const query = txSearchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      dep.id.toLowerCase().includes(query) ||
+      dep.userId.toLowerCase().includes(query) ||
+      (dep.utr && dep.utr.toLowerCase().includes(query)) ||
+      (dep.userName && dep.userName.toLowerCase().includes(query)) ||
+      (dep.userPhone && dep.userPhone.toLowerCase().includes(query));
+
+    const matchesStatus = txStatusFilter === 'all' || dep.status === txStatusFilter;
+    const matchesType = txTypeFilter === 'all' || txTypeFilter === 'deposits';
+
+    return matchesSearch && matchesStatus && matchesType;
+  });
+
+  const filteredWithdrawals = withdrawals.filter((wth) => {
+    const query = txSearchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      wth.id.toLowerCase().includes(query) ||
+      wth.userId.toLowerCase().includes(query) ||
+      (wth.fullName && wth.fullName.toLowerCase().includes(query)) ||
+      (wth.userPhone && wth.userPhone.toLowerCase().includes(query)) ||
+      (wth.upiId && wth.upiId.toLowerCase().includes(query)) ||
+      (wth.accountNumber && wth.accountNumber.toLowerCase().includes(query));
+
+    const matchesStatus = txStatusFilter === 'all' || wth.status === txStatusFilter;
+    const matchesType = txTypeFilter === 'all' || txTypeFilter === 'withdrawals';
+
+    return matchesSearch && matchesStatus && matchesType;
+  });
 
   // Theme & Extended Admin Controls
   const [isAdminLightMode, setIsAdminLightMode] = useState<boolean>(false);
@@ -353,6 +420,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'deposits', label: 'Deposits', count: pendingDepositsCount, icon: ArrowDownCircle },
             { id: 'withdrawals', label: 'Withdrawals', count: pendingWithdrawalsCount, icon: ArrowUpCircle },
             { id: 'draws', label: 'Draw Winners', icon: Trophy },
+            { id: 'tickets', label: 'Tickets History', count: tickets.filter(t => t.status === 'active' || t.status === 'pending').length, icon: Trophy },
             { id: 'users', label: 'Users Directory', icon: Users },
             { id: 'wallet', label: 'Wallet Manager', icon: Wallet },
             { id: 'audit', label: 'Audit Logs', icon: FileText }
@@ -418,6 +486,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle, desc: 'Verify user payment UTR slips' },
                   { id: 'withdrawals', label: 'Withdrawal Requests', count: pendingWithdrawalsCount, icon: ArrowUpCircle, desc: 'Approve user bank payouts' },
                   { id: 'draws', label: 'Draws & Winners', icon: Trophy, desc: 'Set live winning digits' },
+                  { id: 'tickets', label: 'Purchased Tickets History', icon: Trophy, desc: 'Manage player tickets & set win/loss/reject' },
                   { id: 'users', label: 'User Directory', icon: Users, desc: 'Firestore accounts & limits' },
                   { id: 'wallet', label: 'Wallet Manager', icon: Wallet, desc: 'Credit / deduct main balance' },
                   { id: 'audit', label: 'System Audit Logs', icon: FileText, desc: 'Administrative action history' }
@@ -687,8 +756,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span className="text-xs text-amber-400 font-mono font-bold">{pendingDepositsCount} Pending Verification</span>
           </div>
 
+          {/* Financial Transactions Search & Filter Bar */}
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 font-mono shadow-lg">
+            <div className="relative w-full sm:flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={txSearchTerm}
+                onChange={(e) => setTxSearchTerm(e.target.value)}
+                placeholder="Search by User ID, UTR number, Phone, Name, Tx ID..."
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/60 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition-all"
+              />
+              {txSearchTerm && (
+                <button
+                  onClick={() => setTxSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-white"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs">
+                <Filter className="w-3.5 h-3.5 text-amber-400 ml-1" />
+                <select
+                  value={txStatusFilter}
+                  onChange={(e) => setTxStatusFilter(e.target.value as any)}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs pr-1"
+                >
+                  <option value="all" className="bg-slate-900 text-white">All Statuses</option>
+                  <option value="pending" className="bg-slate-900 text-amber-300">Pending</option>
+                  <option value="approved" className="bg-slate-900 text-emerald-300">Approved</option>
+                  <option value="rejected" className="bg-slate-900 text-rose-300">Rejected</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs">
+                <select
+                  value={txTypeFilter}
+                  onChange={(e) => setTxTypeFilter(e.target.value as any)}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs pr-1"
+                >
+                  <option value="all" className="bg-slate-900 text-white">All Types</option>
+                  <option value="deposits" className="bg-slate-900 text-emerald-300">Deposits Only</option>
+                  <option value="withdrawals" className="bg-slate-900 text-rose-300">Withdrawals Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {deposits.map((dep) => (
+            {filteredDeposits.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs font-bold bg-slate-900 rounded-3xl border border-slate-800">
+                No deposit records match your search query or filters.
+              </div>
+            ) : (
+              filteredDeposits.map((dep) => (
               <div
                 key={dep.id}
                 className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
@@ -748,7 +872,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
       )}
@@ -761,8 +885,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span className="text-xs text-rose-400 font-mono font-bold">{pendingWithdrawalsCount} Pending Payouts</span>
           </div>
 
+          {/* Financial Transactions Search & Filter Bar */}
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 font-mono shadow-lg">
+            <div className="relative w-full sm:flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={txSearchTerm}
+                onChange={(e) => setTxSearchTerm(e.target.value)}
+                placeholder="Search by User ID, Account, Name, Phone, Tx ID..."
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500/60 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition-all"
+              />
+              {txSearchTerm && (
+                <button
+                  onClick={() => setTxSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-white"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs">
+                <Filter className="w-3.5 h-3.5 text-amber-400 ml-1" />
+                <select
+                  value={txStatusFilter}
+                  onChange={(e) => setTxStatusFilter(e.target.value as any)}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs pr-1"
+                >
+                  <option value="all" className="bg-slate-900 text-white">All Statuses</option>
+                  <option value="pending" className="bg-slate-900 text-amber-300">Pending</option>
+                  <option value="approved" className="bg-slate-900 text-emerald-300">Approved</option>
+                  <option value="rejected" className="bg-slate-900 text-rose-300">Rejected</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs">
+                <select
+                  value={txTypeFilter}
+                  onChange={(e) => setTxTypeFilter(e.target.value as any)}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs pr-1"
+                >
+                  <option value="all" className="bg-slate-900 text-white">All Types</option>
+                  <option value="deposits" className="bg-slate-900 text-emerald-300">Deposits Only</option>
+                  <option value="withdrawals" className="bg-slate-900 text-rose-300">Withdrawals Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {withdrawals.map((wth) => (
+            {filteredWithdrawals.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs font-bold bg-slate-900 rounded-3xl border border-slate-800">
+                No withdrawal records match your search query or filters.
+              </div>
+            ) : (
+              filteredWithdrawals.map((wth) => (
               <div
                 key={wth.id}
                 className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
@@ -813,7 +992,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
       )}
@@ -865,7 +1044,144 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: USER MANAGEMENT */}
+      {/* TAB 4.5: PURCHASED TICKETS HISTORY MANAGEMENT */}
+      {adminTab === 'tickets' && (
+        <div className="space-y-4 animate-in fade-in duration-200 font-mono">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-400" />
+                <span>Player Ticket Purchase History & Status Controls</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Real-time Firestore ticket stream ({tickets.length} total purchased tickets recorded)
+              </p>
+            </div>
+
+            <button
+              onClick={async () => {
+                soundFx.playCoin();
+                for (const t of tickets) {
+                  try {
+                    await setDoc(doc(db, 'tickets', t.id), t, { merge: true });
+                  } catch (_) {}
+                }
+                alert('⚡ All purchased ticket records synced to Firestore in real-time!');
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl shadow-lg flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>⚡ Force Real-Time Sync to Firestore</span>
+            </button>
+          </div>
+
+          {/* Purchased Tickets List */}
+          <div className="space-y-3">
+            {tickets.length === 0 ? (
+              <div className="p-12 text-center bg-slate-900 rounded-3xl border border-slate-800 text-slate-500 text-xs font-bold">
+                No tickets purchased by any players yet.
+              </div>
+            ) : (
+              tickets.map((t) => {
+                const playerObj = allUsers.find(u => u.id === t.userId);
+                const playerName = (t as any).userName || playerObj?.name || 'BETGURU Player';
+                const playerPhone = (t as any).userPhone || playerObj?.phone || 'N/A';
+                const selectedNums = (t.selectedNumbers || (t as any).numbers || []).join(', ');
+                const drawTitle = t.drawTitle || (t as any).drawName || 'Lottery Draw';
+                const pDate = t.purchaseDate || (t as any).date || 'Real-Time';
+
+                return (
+                  <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl transition-all">
+                    
+                    {/* Left: Player & Ticket details */}
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-black text-amber-400">{drawTitle}</span>
+                        <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          TXN ID: {t.id}
+                        </span>
+                        <span className="text-[10px] text-slate-500">• {pDate}</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                        <span>Player Name: <strong className="text-white">{playerName}</strong></span>
+                        <span className="flex items-center gap-1 text-slate-400">
+                          User ID: <strong className="text-amber-300">{t.userId}</strong>
+                          <button
+                            onClick={() => copyUserIdToClipboard(t.userId)}
+                            className="p-1 hover:text-white transition-colors cursor-pointer"
+                            title="Copy User ID"
+                          >
+                            {copiedUserId === t.userId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                          </button>
+                        </span>
+                        <span>Phone: <strong className="text-slate-300">{playerPhone}</strong></span>
+                      </div>
+
+                      <div className="text-xs text-slate-300 flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800/80 w-fit">
+                        <span className="text-slate-400">Ticket Digits:</span>
+                        <span className="font-extrabold text-amber-300 tracking-wider bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/30">
+                          {selectedNums || 'None'}
+                        </span>
+                        <span className="text-slate-400 ml-2">Ticket Price:</span>
+                        <span className="font-black text-emerald-400">₹{t.price}</span>
+                      </div>
+                    </div>
+
+                    {/* Right: Status badge & Action buttons */}
+                    <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
+                      
+                      <div className="text-left lg:text-right">
+                        <span className="text-[10px] text-slate-500 uppercase block">Current Status</span>
+                        <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-full border ${
+                          t.status === 'win'
+                            ? 'bg-yellow-950 text-yellow-300 border-yellow-800'
+                            : t.status === 'rejected'
+                            ? 'bg-rose-950 text-rose-300 border-rose-800'
+                            : t.status === 'loss'
+                            ? 'bg-slate-800 text-slate-400 border-slate-700'
+                            : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                        }`}>
+                          {t.status || 'Active'}
+                        </span>
+                      </div>
+
+                      {/* Interactive Controls for Win, Loss, Reject */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'win', t.price, t.userId)}
+                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>WIN</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'loss', t.price, t.userId)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all"
+                        >
+                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                          <span>LOSS</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'rejected', t.price, t.userId)}
+                          className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-all"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>REJECT & REFUND</span>
+                        </button>
+                      </div>
+
+                    </div>
+
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
       {adminTab === 'users' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -1648,33 +1964,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-                    <span className="text-xs font-black text-white flex items-center gap-2">
-                      <Wallet className="w-4 h-4 text-amber-400" />
-                      <span>Adjust Main Balance directly:</span>
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        placeholder="Enter amount"
-                        className="bg-slate-900 border border-slate-700 text-amber-300 text-xs font-bold px-3 py-2 rounded-xl outline-none"
-                        id="modalMainBalInput"
-                      />
-                      <button
-                        onClick={() => {
-                          const input = document.getElementById('modalMainBalInput') as HTMLInputElement;
-                          if (input && input.value) {
-                            const val = parseFloat(input.value);
-                            if (!isNaN(val)) {
-                              handleUpdateTargetUserMainBalance(selectedUserForModal, val);
-                              setSelectedUserForModal(prev => prev ? { ...prev, balance: val } : null);
-                            }
-                          }
-                        }}
-                        className="px-4 py-2 bg-amber-500 text-slate-950 font-black text-xs rounded-xl hover:bg-amber-400"
-                      >
-                        Save Main Balance
-                      </button>
+                  {/* Financial Transactions List (Deposits & Withdrawals) */}
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-white flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-emerald-400" />
+                        <span>Real-Time Financial Transactions History</span>
+                      </span>
+                      <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        Firestore Live Feed
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {[
+                        ...deposits.filter(d => d.userId === selectedUserForModal.id).map(d => ({
+                          id: d.id,
+                          type: 'DEPOSIT',
+                          amount: d.amount,
+                          status: d.status,
+                          details: `Method: ${(d.method || 'UPI').toString().toUpperCase()} | UTR: ${d.utr || 'N/A'}`,
+                          date: d.date || 'Real-Time',
+                          isCredit: true
+                        })),
+                        ...withdrawals.filter(w => w.userId === selectedUserForModal.id).map(w => ({
+                          id: w.id,
+                          type: 'WITHDRAWAL',
+                          amount: w.amount,
+                          status: w.status,
+                          details: `A/C: ${w.accountNumber || w.upiId || 'N/A'} | Holder: ${w.fullName || 'User'}`,
+                          date: w.date || 'Real-Time',
+                          isCredit: false
+                        }))
+                      ].sort((a, b) => (b.id > a.id ? 1 : -1)).map((tx) => (
+                        <div key={tx.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase border ${
+                                tx.isCredit ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-rose-950 text-rose-300 border-rose-800'
+                              }`}>
+                                {tx.type}
+                              </span>
+                              <span className="font-bold text-white">{tx.id}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">{tx.details}</p>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className={`text-sm font-black block ${tx.isCredit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {tx.isCredit ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
+                            </span>
+                            <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
+                                tx.status === 'approved' ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : tx.status === 'pending' ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse' : 'bg-rose-950 text-rose-300 border-rose-800'
+                              }`}>
+                                {tx.status}
+                              </span>
+                              <span className="text-[9px] text-slate-500">{tx.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {deposits.filter(d => d.userId === selectedUserForModal.id).length === 0 && withdrawals.filter(w => w.userId === selectedUserForModal.id).length === 0 && (
+                        <div className="p-4 text-center text-slate-500 text-xs font-bold bg-slate-900/60 rounded-xl">
+                          No financial deposit or withdrawal records found for this player.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1736,9 +2092,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         .map((t) => (
                           <div key={t.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
                             <div>
-                              <span className="text-amber-400 font-bold block">{t.drawName}</span>
+                              <span className="text-amber-400 font-bold block">{t.drawTitle || (t as any).drawName || 'Lottery Draw'}</span>
                               <p className="text-[10px] text-slate-400">
-                                Selected Numbers: <span className="text-white font-bold">{t.numbers.join(', ')}</span>
+                                Selected Numbers: <span className="text-white font-bold">{(t.selectedNumbers || (t as any).numbers || []).join(', ')}</span>
+                              </p>
+                              <p className="text-[10px] text-amber-300 font-mono mt-0.5">
+                                Date & Time: <span className="text-white font-semibold">{t.purchaseDate || (t as any).date || 'Real-Time'}</span>
                               </p>
                             </div>
                             <div className="text-right">

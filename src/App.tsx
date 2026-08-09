@@ -24,9 +24,11 @@ import { SettingsView } from './components/SettingsView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { LiveRoulette } from './components/LiveRoulette';
+import { LotterySection } from './components/LotterySection';
+import { WithdrawalSection } from './components/WithdrawalSection';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 
 export default function App() {
@@ -82,7 +84,12 @@ export default function App() {
   const persistDeposit = async (dep: DepositRequest) => {
     try {
       const depRef = doc(db, 'deposits', dep.id);
-      await setDoc(depRef, dep, { merge: true });
+      // Ensure screenshotUrl base64 doesn't exceed Firestore document size limit (1MB)
+      let sanitizedDep = { ...dep };
+      if (sanitizedDep.screenshotUrl && sanitizedDep.screenshotUrl.length > 300000) {
+        sanitizedDep.screenshotUrl = 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=400&q=80';
+      }
+      await setDoc(depRef, sanitizedDep, { merge: true });
     } catch (err) {
       console.error('Error persisting deposit to Firestore:', err);
     }
@@ -222,7 +229,7 @@ export default function App() {
           });
 
           // 1. Distinct Firestore query for Financial Ledger / General Transactions
-          const qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid));
+          const qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
           unsubTx = onSnapshot(qTx, (txSnap) => {
             if (!txSnap.empty) {
               const loadedTxs = txSnap.docs.map((d) => d.data() as WalletTransaction);
@@ -234,8 +241,8 @@ export default function App() {
 
           // 2. Distinct Firestore query for Deposit History Page
           const qDeposits = claimsAdmin
-            ? collection(db, 'deposits')
-            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid));
+            ? query(collection(db, 'deposits'), limit(100))
+            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), limit(100));
           unsubDeposits = onSnapshot(qDeposits, (snap) => {
             if (!snap.empty) {
               const list = snap.docs.map((d) => d.data() as DepositRequest);
@@ -248,8 +255,8 @@ export default function App() {
 
           // 3. Distinct Firestore query for Withdrawal History Page
           const qWithdrawals = claimsAdmin
-            ? collection(db, 'withdrawals')
-            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid));
+            ? query(collection(db, 'withdrawals'), limit(100))
+            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), limit(100));
           unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
             if (!snap.empty) {
               const list = snap.docs.map((d) => d.data() as WithdrawalRequest);
@@ -264,7 +271,8 @@ export default function App() {
           const qRoulette = query(
             collection(db, 'transactions'),
             where('userId', '==', fbUser.uid),
-            where('type', 'in', ['roulette_bet', 'roulette_win'])
+            where('type', 'in', ['roulette_bet', 'roulette_win']),
+            limit(50)
           );
           unsubRoulette = onSnapshot(qRoulette, (rouletteSnap) => {
             if (!rouletteSnap.empty) {
@@ -280,8 +288,8 @@ export default function App() {
 
           // 5. Distinct Firestore query for Lottery History Page (Tickets)
           const qTickets = claimsAdmin
-            ? collection(db, 'tickets')
-            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid));
+            ? query(collection(db, 'tickets'), limit(100))
+            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), limit(100));
           unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
             if (!ticketSnap.empty) {
               const list = ticketSnap.docs.map((d) => d.data() as PurchasedTicket);
@@ -356,7 +364,9 @@ export default function App() {
           // Evaluate player tickets for this draw
           tickets.forEach((t) => {
             if (t.drawId === draw.id && t.status === 'active') {
-              const isWin = t.selectedNumbers.join('') === winningDigits.join('');
+              const selectedStr = (t.selectedNumbers || (t as any).numbers || []).join('');
+              const winStr = (winningDigits || []).join('');
+              const isWin = selectedStr === winStr;
               const status = isWin ? 'win' : 'loss';
               const wonAmount = isWin ? draw.firstPrize : 0;
 
@@ -903,104 +913,102 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'home' && (
-              <div className="max-w-7xl mx-auto px-4 py-6 space-y-8 pb-28">
+              <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 pb-28">
                 
                 {/* Hero Banner with HD Glow */}
-                <div className="relative rounded-3xl bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-900 border border-amber-500/30 p-6 sm:p-8 shadow-2xl overflow-hidden">
+                <div className="relative rounded-3xl bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-900 border border-amber-500/30 p-5 sm:p-7 shadow-2xl overflow-hidden">
                   <div className="absolute -right-16 -bottom-16 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-                  <div className="relative z-10 max-w-2xl space-y-4">
-                    <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full text-amber-300 text-xs font-mono font-bold">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
+                  <div className="relative z-10 max-w-2xl space-y-3">
+                    <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full text-amber-300 text-[11px] font-mono font-bold">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>INDIA'S #1 HD LOTTERY PLATFORM</span>
                     </div>
 
-                    <h1 className="text-3xl sm:text-5xl font-black text-white font-mono tracking-tight leading-tight">
+                    <h1 className="text-2xl sm:text-4xl font-black text-white font-mono tracking-tight leading-tight">
                       PLAY & WIN <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500">REAL CASH</span> JACKPOTS!
                     </h1>
 
-                    <p className="text-sm text-slate-300 font-medium leading-relaxed">
+                    <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
                       Instant wallet deposits via UPI & PhonePe, guaranteed 100% transparent live draws, and lightning-fast bank withdrawals within minutes.
                     </p>
 
-                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
                       <button
                         onClick={() => { soundFx.playClick(); setIsLiveRouletteOpen(true); }}
-                        className="px-6 py-3 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm font-mono rounded-2xl shadow-xl shadow-amber-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+                        className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs font-mono rounded-xl shadow-xl shadow-amber-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                       >
-                        <Disc className="w-5 h-5 text-slate-950 animate-spin [animation-duration:8s]" />
-                        <span>PLAY LIVE ROULETTE (CASINO)</span>
+                        <Disc className="w-4 h-4 text-slate-950 animate-spin [animation-duration:8s]" />
+                        <span>PLAY ROULETTE (CASINO)</span>
                       </button>
 
                       <button
                         onClick={() => { soundFx.playClick(); setIsDepositOpen(true); }}
-                        className="px-5 py-3 bg-slate-900/90 hover:bg-slate-800 text-amber-400 font-bold text-xs sm:text-sm rounded-2xl border border-amber-500/30 flex items-center gap-2 transition-all hover:scale-105"
+                        className="px-4 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-amber-400 font-bold text-xs rounded-xl border border-amber-500/30 flex items-center gap-1.5 transition-all hover:scale-105 cursor-pointer"
                       >
-                        <Plus className="w-4 h-4 stroke-[3]" />
-                        <span>DEPOSIT FUNDS</span>
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>DEPOSIT</span>
                       </button>
 
                       <button
                         onClick={() => { soundFx.playClick(); setIsLuckyWheelOpen(true); }}
-                        className="px-5 py-3 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 font-bold text-xs sm:text-sm rounded-2xl border border-emerald-500/30 flex items-center gap-2 transition-all hover:scale-105"
+                        className="px-4 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 font-bold text-xs rounded-xl border border-emerald-500/30 flex items-center gap-1.5 transition-all hover:scale-105 cursor-pointer"
                       >
-                        <Dices className="w-4 h-4" />
-                        <span>FREE DAILY SPIN</span>
+                        <Dices className="w-3.5 h-3.5" />
+                        <span>DAILY SPIN</span>
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Active HD Lottery Draws Section */}
-                <div>
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                        <Flame className="w-4 h-4 fill-amber-400" />
-                      </div>
-                      <h2 className="text-xl font-black text-white font-mono">LIVE HD LOTTERY DRAWS</h2>
-                    </div>
-                    <span className="text-xs font-mono text-amber-400 font-bold">UPDATES AUTOMATICALLY</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                    {draws.map((draw) => (
-                      <LotteryCard
-                        key={draw.id}
-                        draw={draw}
-                        onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
-                      />
-                    ))}
-                  </div>
-                </div>
+                {/* Single Combined Compact Lottery Section */}
+                <LotterySection
+                  draws={draws}
+                  onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
+                />
 
                 {/* How to Play 3-Step Section */}
-                <div className="bg-slate-900/80 rounded-3xl border border-slate-800 p-6 space-y-4">
-                  <h3 className="text-center text-sm font-extrabold text-amber-400 font-mono uppercase tracking-wider">
+                <div className="bg-slate-900/80 rounded-3xl border border-slate-800 p-5 space-y-3">
+                  <h3 className="text-center text-xs font-extrabold text-amber-400 font-mono uppercase tracking-wider">
                     How BETGURU Lottery Works
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-sm">1</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">1</div>
                       <h4 className="text-xs font-bold text-white font-mono">1. Deposit Wallet</h4>
-                      <p className="text-[11px] text-slate-400">Pay via PhonePe, GPay, Paytm or UPI with instant verification.</p>
+                      <p className="text-[10px] text-slate-400">Pay via PhonePe, GPay, Paytm or UPI with instant verification.</p>
                     </div>
 
-                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-sm">2</div>
+                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">2</div>
                       <h4 className="text-xs font-bold text-white font-mono">2. Buy Lucky Ticket</h4>
-                      <p className="text-[11px] text-slate-400">Pick manual lucky numbers or click Quick Pick for auto-generation.</p>
+                      <p className="text-[10px] text-slate-400">Pick manual lucky numbers or click Quick Pick for auto-generation.</p>
                     </div>
 
-                    <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-sm">3</div>
+                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">3</div>
                       <h4 className="text-xs font-bold text-white font-mono">3. Win & Withdraw</h4>
-                      <p className="text-[11px] text-slate-400">Match digits during draw time and receive instant cash payouts!</p>
+                      <p className="text-[10px] text-slate-400">Match digits during draw time and receive instant cash payouts!</p>
                     </div>
                   </div>
                 </div>
 
               </div>
+            )}
+
+            {activeTab === 'lottery' && (
+              <LotterySection
+                draws={draws}
+                onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
+              />
+            )}
+
+            {activeTab === 'withdrawal' && (
+              <WithdrawalSection
+                user={user}
+                draws={draws}
+                onSubmitWithdrawal={handleWithdrawSubmit}
+              />
             )}
 
             {activeTab === 'tickets' && (
@@ -1028,7 +1036,7 @@ export default function App() {
                 tickets={tickets}
                 transactions={transactions}
                 onOpenDeposit={() => setIsDepositOpen(true)}
-                onOpenWithdraw={() => setIsWithdrawOpen(true)}
+                onOpenWithdraw={() => setActiveTab('withdrawal')}
                 onLogout={handleLogout}
                 onClaimVipBonus={handleClaimVipBonus}
                 onOpenAdmin={() => setIsAdminMode(true)}

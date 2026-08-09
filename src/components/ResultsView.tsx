@@ -40,7 +40,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ draws, onOpenBuyTicket
   const filteredResults = sampleResults.filter(r =>
     r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.drawId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.winningNumbers.join('').includes(searchTerm)
+    (r.winningNumbers || []).join('').includes(searchTerm)
   );
 
   return (
@@ -97,7 +97,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ draws, onOpenBuyTicket
               <div className="p-3 bg-slate-950 rounded-2xl border border-amber-500/30 flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-400 shrink-0" />
                 <div className="flex items-center gap-1.5">
-                  {res.winningNumbers.map((digit, idx) => (
+                  {(res.winningNumbers || []).map((digit, idx) => (
                     <span
                       key={idx}
                       className="w-8 h-9 bg-gradient-to-br from-amber-400 to-yellow-600 text-slate-950 font-black font-mono text-base rounded-lg flex items-center justify-center shadow-md"

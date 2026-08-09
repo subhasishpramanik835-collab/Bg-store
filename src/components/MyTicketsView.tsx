@@ -105,7 +105,7 @@ export const MyTicketsView: React.FC<MyTicketsViewProps> = ({ tickets, onOpenBuy
                   Your Ticket Number:
                 </span>
                 <div className="flex items-center justify-center gap-2">
-                  {t.selectedNumbers.map((num, idx) => (
+                  {(t.selectedNumbers || (t as any).numbers || []).map((num, idx) => (
                     <span
                       key={idx}
                       className="w-9 h-10 bg-amber-500/10 border border-amber-500/40 text-amber-300 font-mono font-black text-lg rounded-xl flex items-center justify-center shadow-inner"

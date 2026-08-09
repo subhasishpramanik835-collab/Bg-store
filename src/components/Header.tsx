@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Wallet, Plus, Bell, Volume2, VolumeX, User as UserIcon, Crown, Gift } from 'lucide-react';
+import { Wallet, Plus, Bell, Volume2, VolumeX, User as UserIcon, Crown, Gift, AlertTriangle } from 'lucide-react';
 import { User } from '../types';
 import { soundFx } from '../utils/audio';
 
@@ -111,6 +111,19 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right Side: Wallet Balance + Plus Deposit + Bell */}
         <div className="flex items-center gap-2 sm:gap-3">
           
+          {/* Low Balance Warning Notification Banner when balance drops below ₹50 */}
+          {balance < 50 && (
+            <div
+              onClick={() => { soundFx.playClick(); onOpenDeposit(); }}
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 bg-amber-500/20 border border-amber-500/60 hover:border-amber-400 rounded-xl text-amber-300 hover:text-amber-200 text-[10px] sm:text-xs font-mono font-bold animate-pulse cursor-pointer shrink-0 transition-all shadow-lg shadow-amber-500/10"
+              title="Wallet balance is below ₹50 threshold! Tap to deposit & keep playing"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-bounce" />
+              <span className="hidden sm:inline">LOW BAL (&lt; ₹50)</span>
+              <span className="sm:hidden text-[9px] font-black">LOW BAL</span>
+            </div>
+          )}
+
           {/* Integrated Wallet Badge (Balance + Plus Deposit Button) */}
           <div 
             onClick={onOpenDeposit}

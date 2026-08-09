@@ -403,7 +403,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     <h4 className="text-sm font-extrabold text-white font-mono">{t.drawTitle}</h4>
                     <p className="text-xs font-mono text-slate-300">
-                      Ticket Digits: <strong className="text-amber-300">{t.selectedNumbers.join(' ')}</strong>
+                      Ticket Digits: <strong className="text-amber-300">{(t.selectedNumbers || (t as any).numbers || []).join(' ')}</strong>
                     </p>
                   </div>
 
