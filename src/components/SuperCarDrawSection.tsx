@@ -252,34 +252,86 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
         </div>
       )}
 
-      {/* 3 SUPERCAR CARDS GRID (Lottery Style Design) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4.5">
+      {/* CAR SELECTOR TAB BAR FOR QUICK MOBILE & DESKTOP NAVIGATION */}
+      <div className="flex items-center justify-between gap-1.5 p-1 bg-slate-950/90 border border-slate-800 rounded-2xl">
+        <button
+          type="button"
+          onClick={() => {
+            soundFx.playClick();
+            setActiveTabCar('red');
+          }}
+          className={`flex-1 py-1.5 sm:py-2 px-2 rounded-xl text-[10px] sm:text-xs font-mono font-black transition-all cursor-pointer flex items-center justify-center gap-1 ${
+            activeTabCar === 'red'
+              ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+          <span>RED V12</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            soundFx.playClick();
+            setActiveTabCar('black');
+          }}
+          className={`flex-1 py-1.5 sm:py-2 px-2 rounded-xl text-[10px] sm:text-xs font-mono font-black transition-all cursor-pointer flex items-center justify-center gap-1 ${
+            activeTabCar === 'black'
+              ? 'bg-slate-700 text-amber-300 border border-amber-500/40 shadow-md'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+          <span>STEALTH V10</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            soundFx.playClick();
+            setActiveTabCar('yellow');
+          }}
+          className={`flex-1 py-1.5 sm:py-2 px-2 rounded-xl text-[10px] sm:text-xs font-mono font-black transition-all cursor-pointer flex items-center justify-center gap-1 ${
+            activeTabCar === 'yellow'
+              ? 'bg-yellow-500 text-slate-950 shadow-md shadow-yellow-500/30'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-yellow-300"></span>
+          <span>YELLOW V8</span>
+        </button>
+      </div>
+
+      {/* 3 SUPERCAR CARDS IN ONE SINGLE WIDTH ROW (Red, Black, Yellow side-by-side) */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-3.5">
         {carsList.map((carKey) => {
           const car = getSuperCarInfo(carKey, config);
           const ticketPrice = config.carPrices?.[carKey] || config.ticketPrice || 100;
           const prizeMultiplier = config.carMultipliers?.[carKey] || config.prizeMultiplier || 2.8;
           const isDrawClosed = !scheduleInfo.isOpen || scheduleInfo.isShuffling;
+          const maxEstWin = Math.round(ticketPrice * prizeMultiplier);
 
           return (
             <div
               key={carKey}
-              className={`group relative rounded-3xl bg-slate-950/95 border transition-all duration-300 hover:scale-[1.015] flex flex-col justify-between overflow-hidden shadow-2xl ${
+              className={`group relative rounded-xl sm:rounded-2xl bg-slate-950/95 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
                 carKey === 'red'
-                  ? 'border-rose-500/40 hover:border-rose-500/90 shadow-rose-950/40'
+                  ? 'border-rose-500/40 hover:border-rose-500/90 shadow-rose-950/30'
                   : carKey === 'black'
-                  ? 'border-amber-500/40 hover:border-amber-500/90 shadow-amber-950/40'
-                  : 'border-yellow-500/40 hover:border-yellow-500/90 shadow-yellow-950/40'
+                  ? 'border-amber-500/40 hover:border-amber-500/90 shadow-amber-950/30'
+                  : 'border-yellow-500/40 hover:border-yellow-500/90 shadow-yellow-950/30'
               }`}
             >
-              {/* Top Banner Accent Line */}
-              <div className={`absolute top-0 left-0 right-0 h-1.5 z-20 ${
-                carKey === 'red' ? 'bg-gradient-to-r from-rose-600 via-red-500 to-rose-400' :
-                carKey === 'black' ? 'bg-gradient-to-r from-slate-600 via-amber-500 to-amber-300' :
-                'bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-200'
+              {/* Top Accent Line */}
+              <div className={`absolute top-0 left-0 right-0 h-1 z-20 ${
+                carKey === 'red' ? 'bg-gradient-to-r from-rose-600 to-red-400' :
+                carKey === 'black' ? 'bg-gradient-to-r from-slate-600 to-amber-400' :
+                'bg-gradient-to-r from-yellow-400 to-amber-300'
               }`}></div>
 
-              {/* Card Header Image Banner */}
-              <div className="relative h-36 sm:h-44 overflow-hidden">
+              {/* Card Banner Image (Ultra-Compact Height for 3-Col Layout) */}
+              <div className="relative h-20 sm:h-32 overflow-hidden">
                 <img
                   src={car.image}
                   alt={car.name}
@@ -288,113 +340,94 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent"></div>
 
                 {/* Badge Tag */}
-                <div className="absolute top-2.5 left-2.5 bg-slate-950/90 backdrop-blur-md border border-amber-500/40 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-mono font-black text-amber-300 shadow-md flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>{car.badge}</span>
+                <div className="absolute top-1 left-1 bg-slate-950/90 border border-amber-500/40 px-1.5 py-0.5 rounded-md text-[8px] sm:text-[9px] font-mono font-black text-amber-300 shadow-md flex items-center gap-0.5">
+                  <Sparkles className="w-2 h-2 text-amber-400 shrink-0" />
+                  <span className="truncate max-w-[50px] sm:max-w-none">{carKey.toUpperCase()}</span>
                 </div>
 
-                <div className="absolute top-2.5 right-2.5 bg-emerald-500/30 backdrop-blur-md border border-emerald-500/60 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-mono font-black text-emerald-300 shadow-md">
-                  {prizeMultiplier}x PAYOUT
+                <div className="absolute top-1 right-1 bg-emerald-500/30 border border-emerald-500/60 px-1.5 py-0.5 rounded-md text-[8px] sm:text-[9px] font-mono font-black text-emerald-300 shadow-md">
+                  {prizeMultiplier}x
                 </div>
 
                 {/* Car Title Overlay */}
-                <div className="absolute bottom-2.5 left-3 right-3">
-                  <h3 className="text-base sm:text-lg font-black font-mono text-white tracking-tight leading-none drop-shadow-md">
+                <div className="absolute bottom-1 left-1.5 right-1.5">
+                  <h3 className="text-[11px] sm:text-sm font-black font-mono text-white tracking-tight leading-none drop-shadow truncate">
                     {car.name}
                   </h3>
-                  <p className="text-[10px] text-slate-300 font-mono mt-0.5 opacity-90 truncate">
+                  <p className="hidden sm:block text-[9px] text-slate-300 font-mono mt-0.5 opacity-90 truncate">
                     {car.tagline}
                   </p>
                 </div>
               </div>
 
-              {/* Card Details */}
-              <div className="p-3 sm:p-3.5 space-y-2.5 sm:space-y-3 flex-1 flex flex-col justify-between">
-                
-                {/* Est. Win Prize Box (Lottery Card Style) */}
-                <div className="p-2.5 bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/40 rounded-2xl border border-amber-500/30 relative overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-[8px] sm:text-[9px] uppercase font-bold text-amber-400/90 tracking-wider block font-mono">
-                        Max Estimated Win
-                      </span>
-                      <span className="text-base sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 font-mono">
-                        ₹{Math.round(ticketPrice * prizeMultiplier).toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 text-slate-950 flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
-                      <Trophy className="w-4 h-4 stroke-[2.5]" />
-                    </div>
+              {/* Compact Card Content */}
+              <div className="p-1.5 sm:p-2.5 space-y-1.5 flex-1 flex flex-col justify-between">
+                {/* Est. Win & Ticket Price Compact Box */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-mono text-center">
+                  <div className="p-1 bg-slate-900/90 rounded-lg border border-amber-500/30">
+                    <span className="text-[7px] sm:text-[8px] text-amber-400 block font-bold uppercase truncate">Est. Win</span>
+                    <span className="text-[10px] sm:text-xs font-black text-amber-300">₹{maxEstWin}</span>
+                  </div>
+
+                  <div className="p-1 bg-slate-900/90 rounded-lg border border-slate-800">
+                    <span className="text-[7px] sm:text-[8px] text-slate-400 block font-bold uppercase truncate">Ticket</span>
+                    <span className="text-[10px] sm:text-xs font-black text-white">₹{ticketPrice}</span>
                   </div>
                 </div>
 
-                {/* Ticket Price & Speed Specs */}
-                <div className="grid grid-cols-2 gap-2 text-center font-mono">
-                  <div className="p-2 bg-slate-900/90 rounded-2xl border border-slate-800/80">
-                    <span className="text-[9px] text-slate-400 block uppercase font-bold">Ticket Price</span>
-                    <span className="text-xs font-black text-amber-300">₹{ticketPrice}</span>
-                  </div>
-
-                  <div className="p-2 bg-slate-900/90 rounded-2xl border border-slate-800/80">
-                    <span className="text-[9px] text-slate-400 block uppercase font-bold">Top Speed</span>
-                    <span className="text-xs font-black text-slate-200">{car.topSpeed}</span>
-                  </div>
-                </div>
-
-                {/* Dynamic Synchronized Countdown Timer Bar inside Card */}
-                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/95 rounded-2xl border border-amber-500/30 font-mono">
-                  <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Draw Countdown</span>
+                {/* Countdown Row */}
+                <div className="flex items-center justify-between px-1.5 py-0.5 bg-slate-900/90 rounded-lg border border-slate-800 font-mono text-[8px] sm:text-[10px]">
+                  <span className="text-slate-400 font-bold flex items-center gap-0.5">
+                    <Clock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                    <span className="hidden sm:inline">Draw</span>
                   </span>
-                  <span className="text-xs font-black text-amber-300 tracking-wider">
-                    {scheduleInfo.isOpen ? formatCountdown(scheduleInfo.timeRemainingMs) : 'Opens 08:00 AM'}
+                  <span className="font-black text-amber-300">
+                    {scheduleInfo.isOpen ? formatCountdown(scheduleInfo.timeRemainingMs) : '08:00 AM'}
                   </span>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="space-y-1.5 pt-0.5">
+                {/* Buy Button */}
+                <button
+                  onClick={() => {
+                    if (isDrawClosed) return;
+                    soundFx.playClick();
+                    setSelectedBuyCar(carKey);
+                  }}
+                  disabled={isDrawClosed}
+                  className={`w-full py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-black font-mono text-[9px] sm:text-xs tracking-wide shadow-md flex items-center justify-center gap-0.5 sm:gap-1 transition-all cursor-pointer ${
+                    !isDrawClosed
+                      ? carKey === 'red'
+                        ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 text-white shadow-rose-500/20 active:scale-95'
+                        : carKey === 'black'
+                        ? 'bg-gradient-to-r from-slate-700 via-amber-500 to-slate-800 text-white shadow-amber-500/20 active:scale-95'
+                        : 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-yellow-500/20 active:scale-95'
+                      : 'bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  }`}
+                >
+                  <Ticket className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{isDrawClosed ? 'LOCKED' : 'BUY TICKET'}</span>
+                </button>
+
+                {/* View Draw & Result Links */}
+                <div className="grid grid-cols-2 gap-1 text-[8px] sm:text-[9px] font-mono font-bold text-center">
                   <button
                     onClick={() => {
-                      if (isDrawClosed) return;
                       soundFx.playClick();
                       setSelectedBuyCar(carKey);
                     }}
-                    disabled={isDrawClosed}
-                    className={`w-full py-2.5 rounded-2xl font-black font-mono text-xs tracking-wide shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      !isDrawClosed
-                        ? carKey === 'red'
-                          ? 'bg-gradient-to-r from-rose-500 via-red-500 to-rose-600 hover:from-rose-400 hover:to-red-400 text-white shadow-rose-500/30 hover:scale-[1.02] active:scale-[0.98]'
-                          : carKey === 'black'
-                          ? 'bg-gradient-to-r from-slate-700 via-amber-500 to-slate-800 hover:from-slate-600 hover:to-amber-400 text-white shadow-amber-500/20 hover:scale-[1.02] active:scale-[0.98]'
-                          : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-yellow-500/20 hover:scale-[1.02] active:scale-[0.98]'
-                        : 'bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed'
-                    }`}
+                    className="py-0.5 sm:py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer truncate"
                   >
-                    <Ticket className="w-3.5 h-3.5 shrink-0" />
-                    <span>{isDrawClosed ? 'DRAW LOCKED' : `BUY ${carKey.toUpperCase()} TICKET`}</span>
+                    Draw
                   </button>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => {
-                        soundFx.playClick();
-                        setSelectedBuyCar(carKey);
-                      }}
-                      className="py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-mono text-[10px] font-bold transition-colors cursor-pointer"
-                    >
-                      View Draw
-                    </button>
-                    <button
-                      onClick={() => {
-                        soundFx.playClick();
-                        setIsResultsOpen(true);
-                      }}
-                      className="py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-mono text-[10px] font-bold transition-colors cursor-pointer"
-                    >
-                      View Result
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setIsResultsOpen(true);
+                    }}
+                    className="py-0.5 sm:py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer truncate"
+                  >
+                    Result
+                  </button>
                 </div>
               </div>
             </div>

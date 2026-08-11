@@ -27,6 +27,7 @@ import { LiveRoulette } from './components/LiveRoulette';
 import { LotterySection } from './components/LotterySection';
 import { WithdrawalSection } from './components/WithdrawalSection';
 import { SuperCarDrawSection } from './components/SuperCarDrawSection';
+import { CompactUserDashboardCard } from './components/CompactUserDashboardCard';
 import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
 import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor } from './types';
 import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo } from './utils/supercar';
@@ -1422,53 +1423,19 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'home' && (
-              <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 pb-28">
+              <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-4 sm:space-y-5 pb-28">
                 
-                {/* Hero Banner with HD Glow */}
-                <div className="relative rounded-3xl bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-900 border border-amber-500/30 p-5 sm:p-7 shadow-2xl overflow-hidden">
-                  <div className="absolute -right-16 -bottom-16 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-                  <div className="relative z-10 max-w-2xl space-y-3">
-                    <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full text-amber-300 text-[11px] font-mono font-bold">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>INDIA'S #1 HD LOTTERY PLATFORM</span>
-                    </div>
-
-                    <h1 className="text-2xl sm:text-4xl font-black text-white font-mono tracking-tight leading-tight">
-                      PLAY & WIN <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500">REAL CASH</span> JACKPOTS!
-                    </h1>
-
-                    <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
-                      Instant wallet deposits via UPI & PhonePe, guaranteed 100% transparent live draws, and lightning-fast bank withdrawals within minutes.
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                      <button
-                        onClick={() => { soundFx.playClick(); setIsLiveRouletteOpen(true); }}
-                        className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs font-mono rounded-xl shadow-xl shadow-amber-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                      >
-                        <Disc className="w-4 h-4 text-slate-950 animate-spin [animation-duration:8s]" />
-                        <span>PLAY ROULETTE (CASINO)</span>
-                      </button>
-
-                      <button
-                        onClick={() => { soundFx.playClick(); setIsDepositOpen(true); }}
-                        className="px-4 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-amber-400 font-bold text-xs rounded-xl border border-amber-500/30 flex items-center gap-1.5 transition-all hover:scale-105 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>DEPOSIT</span>
-                      </button>
-
-                      <button
-                        onClick={() => { soundFx.playClick(); setIsLuckyWheelOpen(true); }}
-                        className="px-4 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 font-bold text-xs rounded-xl border border-emerald-500/30 flex items-center gap-1.5 transition-all hover:scale-105 cursor-pointer"
-                      >
-                        <Dices className="w-3.5 h-3.5" />
-                        <span>DAILY SPIN</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                {/* COMBINED 3-SECTION COMPACT USER DASHBOARD CARD */}
+                <CompactUserDashboardCard
+                  user={user}
+                  activeTicketsCount={activeTicketsCount}
+                  onOpenDeposit={() => setIsDepositOpen(true)}
+                  onOpenWithdraw={() => setActiveTab('withdrawal')}
+                  onOpenRoulette={() => setIsLiveRouletteOpen(true)}
+                  onOpenLuckyWheel={() => setIsLuckyWheelOpen(true)}
+                  onOpenMyTickets={() => setActiveTab('tickets')}
+                  onOpenResults={() => setActiveTab('results')}
+                />
 
                 {/* Three Super Car Draw Live Section */}
                 {isSuperCarEnabled && (
@@ -1488,32 +1455,6 @@ export default function App() {
                   draws={draws}
                   onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
                 />
-
-                {/* How to Play 3-Step Section */}
-                <div className="bg-slate-900/80 rounded-3xl border border-slate-800 p-5 space-y-3">
-                  <h3 className="text-center text-xs font-extrabold text-amber-400 font-mono uppercase tracking-wider">
-                    How BETGURU Lottery Works
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">1</div>
-                      <h4 className="text-xs font-bold text-white font-mono">1. Deposit Wallet</h4>
-                      <p className="text-[10px] text-slate-400">Pay via PhonePe, GPay, Paytm or UPI with instant verification.</p>
-                    </div>
-
-                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">2</div>
-                      <h4 className="text-xs font-bold text-white font-mono">2. Buy Lucky Ticket</h4>
-                      <p className="text-[10px] text-slate-400">Pick manual lucky numbers or click Quick Pick for auto-generation.</p>
-                    </div>
-
-                    <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
-                      <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-extrabold font-mono flex items-center justify-center mx-auto text-xs">3</div>
-                      <h4 className="text-xs font-bold text-white font-mono">3. Win & Withdraw</h4>
-                      <p className="text-[10px] text-slate-400">Match digits during draw time and receive instant cash payouts!</p>
-                    </div>
-                  </div>
-                </div>
 
               </div>
             )}

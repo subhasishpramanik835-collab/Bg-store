@@ -35,10 +35,11 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
   const [urlInputs, setUrlInputs] = useState<{ [key in SuperCarColor]?: string }>({});
 
   // Sub-Tab 1 (Sales Monitor) State
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [monitorSelectedDateStr, setMonitorSelectedDateStr] = useState<string>(todayStr);
   const [selectedMonitorSlot, setSelectedMonitorSlot] = useState<number | 'all'>('all');
 
   // Sub-Tab 2 (Daily Draws Results) State
-  const todayStr = new Date().toISOString().split('T')[0];
   const [adminSelectedDateStr, setAdminSelectedDateStr] = useState<string>(todayStr);
   const [drawsSearchTerm, setDrawsSearchTerm] = useState<string>('');
   const [drawsViewMode, setDrawsViewMode] = useState<'grid' | 'table'>('table');
@@ -438,8 +439,44 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
     }
   };
 
-  // Filtered tickets for Monitor
-  const monitorFilteredTickets = supercarTickets.filter((t) => {
+  // Helper to check if a ticket belongs to a specific calendar date
+  const isTicketOnDate = (t: PurchasedTicket & Record<string, any>, targetDateStr: string) => {
+    if (!t || !targetDateStr) return false;
+
+    const [y, m, d] = targetDateStr.split('-').map(Number);
+    const compactDate = `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
+    const localizedSlash = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    const localizedDash = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+    // 1. Check drawId / id / ticketNumber
+    const idStr = String(t.drawId || t.id || t.ticketNumber || '');
+    if (idStr.includes(compactDate)) return true;
+
+    // 2. Check drawTime / purchaseDate / drawDate string match
+    const tTime = String(t.drawTime || t.purchaseDate || t.drawDate || '');
+    if (tTime.includes(localizedDash) || tTime.includes(localizedSlash) || tTime.includes(compactDate)) return true;
+
+    // 3. Check purchaseDate timestamp
+    if (t.purchaseDate) {
+      const pDate = new Date(t.purchaseDate);
+      if (!isNaN(pDate.getTime())) {
+        const pY = pDate.getFullYear();
+        const pM = String(pDate.getMonth() + 1).padStart(2, '0');
+        const pD = String(pDate.getDate()).padStart(2, '0');
+        if (`${pY}-${pM}-${pD}` === targetDateStr) return true;
+      }
+    }
+
+    // 4. Default fallback: if target date is today and ticket lacks date field, include it
+    if (!t.drawTime && !t.purchaseDate && !t.drawDate && !t.drawId && targetDateStr === todayStr) return true;
+
+    return false;
+  };
+
+  // Filtered tickets for Monitor by Date & Slot
+  const monitorDateFilteredTickets = supercarTickets.filter((t) => isTicketOnDate(t, monitorSelectedDateStr));
+
+  const monitorFilteredTickets = monitorDateFilteredTickets.filter((t) => {
     if (selectedMonitorSlot === 'all') return true;
     const timeLabel = getSlotTimeLabel(selectedMonitorSlot as number);
     return t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(selectedMonitorSlot).padStart(2, '0')}`);
@@ -635,6 +672,66 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                   );
                 })}
               </select>
+            </div>
+          </div>
+
+          {/* CALENDAR DATE SELECTOR CARD FOR LIVE SALES MONITOR */}
+          <div className="p-3.5 bg-slate-900 border border-amber-500/30 rounded-3xl space-y-3 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Filter Ticket Sales by Calendar Date</span>
+                  <span className="text-[10px] text-amber-400 font-bold">
+                    Selected Date: {monitorSelectedDateStr} ({monitorDateFilteredTickets.length} Total Sales Recorded)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setMonitorSelectedDateStr(todayStr);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    monitorSelectedDateStr === todayStr
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    const d = new Date();
+                    d.setDate(d.getDate() - 1);
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    setMonitorSelectedDateStr(`${y}-${m}-${day}`);
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer"
+                >
+                  Yesterday
+                </button>
+
+                <input
+                  type="date"
+                  value={monitorSelectedDateStr}
+                  onChange={(e) => {
+                    soundFx.playClick();
+                    setMonitorSelectedDateStr(e.target.value);
+                  }}
+                  className="bg-slate-950 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold rounded-xl px-3 py-1.5 outline-none cursor-pointer focus:border-amber-400"
+                />
+              </div>
             </div>
           </div>
 

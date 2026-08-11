@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* GPU Hardware Acceleration Helper */
+.gpu-accelerate {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 @keyframes marquee {
   0% {
     transform: translateX(0%);
@@ -11,6 +29,7 @@
 
 .animate-marquee {
   animation: marquee 25s linear infinite;
+  will-change: transform;
 }
 
 .animate-marquee:hover {
@@ -48,7 +67,7 @@
   background: #f59e0b;
 }
 
-/* Premium HD Gold Luxury Background Mesh */
+/* Premium HD Gold Luxury Background Mesh - Optimized for 60/120fps scrolling */
 .gold-bg-hd {
   background-color: #020617;
   background-image: 
@@ -57,7 +76,8 @@
     radial-gradient(circle at 50% 85%, rgba(251, 191, 36, 0.12) 0%, transparent 55%),
     radial-gradient(circle at 30% 60%, rgba(180, 83, 9, 0.1) 0%, transparent 40%),
     linear-gradient(180deg, #030712 0%, #020617 50%, #0f172a 100%);
-  background-attachment: fixed;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 /* Round Rainbow Shadow Animation */
