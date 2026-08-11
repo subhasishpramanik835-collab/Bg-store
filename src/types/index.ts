@@ -30,6 +30,21 @@ export interface User {
   totalReferrals?: number;
   role?: 'user' | 'admin';
   settings?: UserSettings;
+  isSuspicious?: boolean;
+  suspiciousReason?: string;
+  suspiciousDate?: string;
+}
+
+export interface RegistrationConfig {
+  bonusAmount: number;
+  isBonusEnabled: boolean;
+  duplicateDetectionEnabled: boolean;
+  updatedAt?: string;
+}
+
+export interface NotificationConfig {
+  chimeSoundUrl?: string;
+  chimeType?: 'bell' | 'chime' | 'fanfare';
 }
 
 export interface WalletTransaction {

@@ -154,30 +154,58 @@ export const AdminSmtpManager: React.FC = () => {
     }
   };
 
-  const handleTestSmtp = async (acc: SmtpAccount) => {
+  const handleTestSmtp = async (acc: SmtpAccount, customTargetEmail?: string) => {
     soundFx.playClick();
     setTestingAccId(acc.id);
     setStatusMsg(null);
 
-    // Simulate real SMTP handshake test
-    setTimeout(async () => {
-      try {
+    try {
+      const target = customTargetEmail || testTargetEmail.trim() || acc.email;
+      const res = await fetch('/api/test-smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: acc.email,
+          appPassword: acc.appPasswordEncrypted,
+          senderName: acc.senderName,
+          host: acc.host,
+          port: acc.port,
+          testTarget: target
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
         await setDoc(doc(db, 'smtp_accounts', acc.id), {
           lastTestedAt: new Date().toISOString(),
           status: 'Active'
         }, { merge: true });
 
-        soundFx.playCoin();
+        soundFx.playWinFanfare();
         setStatusMsg({
           type: 'success',
-          text: `⚡ Test verification email dispatched via ${acc.email}! SMTP Handshake (TLS Port ${acc.port}) returning HTTP 200 OK.`
+          text: `⚡ ${data.message}`
         });
-      } catch (err: any) {
-        setStatusMsg({ type: 'error', text: `SMTP connection failed: ${err.message}` });
-      } finally {
-        setTestingAccId(null);
+      } else {
+        await setDoc(doc(db, 'smtp_accounts', acc.id), {
+          status: 'Inactive'
+        }, { merge: true });
+
+        setStatusMsg({
+          type: 'error',
+          text: `❌ SMTP Connection Error: ${data.error}`
+        });
       }
-    }, 1200);
+    } catch (err: any) {
+      console.error('SMTP test fetch error:', err);
+      setStatusMsg({
+        type: 'error',
+        text: `Network Error: ${err.message}`
+      });
+    } finally {
+      setTestingAccId(null);
+    }
   };
 
   const activePrimary = accounts.find(a => a.isPrimaryOtpSender);
@@ -271,6 +299,39 @@ export const AdminSmtpManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Test Email Dispatch Bar */}
+      {accounts.length > 0 && (
+        <div className="p-4 bg-slate-900 border border-purple-500/30 rounded-3xl space-y-2 shadow-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-white flex items-center gap-2">
+              <Send className="w-4 h-4 text-purple-400" />
+              <span>Send Test Email / OTP To Custom Address</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">Uses active primary sender: <strong className="text-amber-400">{activePrimary?.email || accounts[0]?.email}</strong></span>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center gap-2">
+            <input
+              type="email"
+              placeholder="Enter recipient email (e.g. testuser@gmail.com)"
+              value={testTargetEmail}
+              onChange={(e) => setTestTargetEmail(e.target.value)}
+              className="w-full sm:flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
+            />
+            <button
+              onClick={() => {
+                const targetAcc = activePrimary || accounts[0];
+                if (targetAcc) handleTestSmtp(targetAcc, testTargetEmail);
+              }}
+              disabled={!!testingAccId}
+              className="w-full sm:w-auto px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-md shrink-0 flex items-center justify-center gap-2"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{testingAccId ? 'Sending...' : 'Send Live Test Email'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Gmail Accounts List */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">

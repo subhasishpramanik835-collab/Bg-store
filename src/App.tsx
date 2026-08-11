@@ -35,6 +35,15 @@ import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth
 import { doc, getDoc, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { logAnalyticsEvent } from './utils/analytics';
 import confetti from 'canvas-confetti';
+import { 
+  notifyDepositSubmitted, 
+  notifyDepositApproved, 
+  notifyDepositRejected, 
+  notifyWithdrawalSubmitted, 
+  notifyWithdrawalApproved, 
+  notifyWithdrawalRejected,
+  notifyBonusCredited
+} from './utils/emailNotifier';
 
 export default function App() {
   const [initialState] = useState(() => loadState());
@@ -134,6 +143,15 @@ export default function App() {
     }
   };
 
+  // Helper to reset user history states to prevent cross-user cached data leakage
+  const resetUserDataState = () => {
+    setTransactions([]);
+    setDeposits([]);
+    setWithdrawals([]);
+    setTickets([]);
+    setNotifications([]);
+  };
+
   // Initialize Firebase connection test & auth listener
   useEffect(() => {
     testConnection();
@@ -156,11 +174,154 @@ export default function App() {
       if (unsubNotifications) { try { unsubNotifications(); } catch (_) {} unsubNotifications = null; }
     };
 
+    const sortChronologicalNewestFirst = <T extends { date?: string; purchaseDate?: string; id: string }>(items: T[]): T[] => {
+      return [...items].sort((a, b) => {
+        const timeA = a.date ? new Date(a.date).getTime() : (a.purchaseDate ? new Date(a.purchaseDate).getTime() : 0);
+        const timeB = b.date ? new Date(b.date).getTime() : (b.purchaseDate ? new Date(b.purchaseDate).getTime() : 0);
+        if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeB - timeA;
+        return b.id.localeCompare(a.id);
+      });
+    };
+
+    const attachRealtimeUserListeners = (activeUid: string, claimsAdmin: boolean) => {
+      cleanupListeners();
+
+      // 1. Real-time user profile & balance listener
+      const userRef = doc(db, 'users', activeUid);
+      unsubUser = onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const uData = docSnap.data() as User;
+          setUser((prev) => ({
+            ...prev,
+            ...uData,
+            balance: typeof uData.balance === 'number' ? uData.balance : (prev?.balance ?? 100),
+            bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : (prev?.bonusBalance ?? 100)
+          }));
+        }
+      }, (err) => console.warn('Real-time user snapshot notice:', err.message));
+
+      // 2. Real-time Transactions query
+      let qTx;
+      try {
+        qTx = query(collection(db, 'transactions'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
+      } catch (_) {
+        qTx = query(collection(db, 'transactions'), where('userId', '==', activeUid), limit(100));
+      }
+      unsubTx = onSnapshot(qTx, (txSnap) => {
+        if (!txSnap.empty) {
+          const loadedTxs = sortChronologicalNewestFirst(txSnap.docs.map((d) => d.data() as WalletTransaction));
+          setTransactions(loadedTxs);
+        } else {
+          setTransactions([]);
+        }
+      }, (err) => {
+        console.warn('Real-time transactions snapshot notice:', err.message);
+        const fallbackQ = query(collection(db, 'transactions'), where('userId', '==', activeUid), limit(100));
+        onSnapshot(fallbackQ, (fSnap) => {
+          if (!fSnap.empty) {
+            setTransactions(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WalletTransaction)));
+          } else {
+            setTransactions([]);
+          }
+        });
+      });
+
+      // 3. Real-time Deposit Requests query
+      const qDeposits = claimsAdmin
+        ? query(collection(db, 'deposits'), orderBy('date', 'desc'), limit(100))
+        : query(collection(db, 'deposits'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
+      unsubDeposits = onSnapshot(qDeposits, (snap) => {
+        if (!snap.empty) {
+          const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as DepositRequest));
+          setDeposits(list);
+        } else {
+          setDeposits([]);
+        }
+      }, (err) => {
+        console.warn('Real-time deposits snapshot notice:', err.message);
+        const fallbackQ = claimsAdmin
+          ? query(collection(db, 'deposits'), limit(100))
+          : query(collection(db, 'deposits'), where('userId', '==', activeUid), limit(100));
+        onSnapshot(fallbackQ, (fSnap) => {
+          if (!fSnap.empty) {
+            setDeposits(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as DepositRequest)));
+          } else {
+            setDeposits([]);
+          }
+        });
+      });
+
+      // 4. Real-time Withdrawal Requests query
+      const qWithdrawals = claimsAdmin
+        ? query(collection(db, 'withdrawals'), orderBy('date', 'desc'), limit(100))
+        : query(collection(db, 'withdrawals'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
+      unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
+        if (!snap.empty) {
+          const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as WithdrawalRequest));
+          setWithdrawals(list);
+        } else {
+          setWithdrawals([]);
+        }
+      }, (err) => {
+        console.warn('Real-time withdrawals snapshot notice:', err.message);
+        const fallbackQ = claimsAdmin
+          ? query(collection(db, 'withdrawals'), limit(100))
+          : query(collection(db, 'withdrawals'), where('userId', '==', activeUid), limit(100));
+        onSnapshot(fallbackQ, (fSnap) => {
+          if (!fSnap.empty) {
+            setWithdrawals(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WithdrawalRequest)));
+          } else {
+            setWithdrawals([]);
+          }
+        });
+      });
+
+      // 5. Real-time Lottery Tickets query
+      const qTickets = claimsAdmin
+        ? query(collection(db, 'tickets'), orderBy('purchaseDate', 'desc'), limit(100))
+        : query(collection(db, 'tickets'), where('userId', '==', activeUid), orderBy('purchaseDate', 'desc'), limit(100));
+      unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
+        if (!ticketSnap.empty) {
+          const list = sortChronologicalNewestFirst(ticketSnap.docs.map((d) => d.data() as PurchasedTicket));
+          setTickets(list);
+        } else {
+          setTickets([]);
+        }
+      }, (err) => {
+        console.warn('Real-time tickets snapshot notice:', err.message);
+        const fallbackQ = claimsAdmin
+          ? query(collection(db, 'tickets'), limit(100))
+          : query(collection(db, 'tickets'), where('userId', '==', activeUid), limit(100));
+        onSnapshot(fallbackQ, (fSnap) => {
+          if (!fSnap.empty) {
+            setTickets(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as PurchasedTicket)));
+          } else {
+            setTickets([]);
+          }
+        });
+      });
+
+      // 6. Real-time Notifications query
+      const qNotifications = claimsAdmin
+        ? query(collection(db, 'notifications'), limit(50))
+        : query(collection(db, 'notifications'), where('userId', '==', activeUid), limit(50));
+      unsubNotifications = onSnapshot(qNotifications, (ntfSnap) => {
+        if (!ntfSnap.empty) {
+          const list = sortChronologicalNewestFirst(ntfSnap.docs.map((d) => d.data() as NotificationItem));
+          setNotifications(list);
+        } else {
+          setNotifications([]);
+        }
+      }, (err) => console.warn('Real-time notifications snapshot notice:', err.message));
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       cleanupListeners();
 
       if (fbUser) {
         setCurrentUser(fbUser);
+        resetUserDataState();
+
         try {
           const userRef = doc(db, 'users', fbUser.uid);
           const isAdminEmail = fbUser.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || fbUser.email?.toLowerCase() === 'asishp92@gmail.com';
@@ -181,7 +342,7 @@ export default function App() {
           try {
             userSnap = await getDoc(userRef);
           } catch (offlineErr) {
-            console.warn('Firestore user fetch offline or network delay, continuing with cached/default profile:', offlineErr);
+            console.warn('Firestore user fetch offline or network delay:', offlineErr);
           }
 
           if (userSnap && userSnap.exists()) {
@@ -204,7 +365,6 @@ export default function App() {
               soundFx.setHapticEnabled(data.settings.hapticEnabled ?? true);
             }
 
-            // Keep Firestore user doc updated
             setDoc(userRef, {
               name: updatedUser.name,
               email: updatedUser.email,
@@ -236,164 +396,108 @@ export default function App() {
             setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('Deferred new user creation notice:', err));
           }
 
-          // Real-time listener for user profile & balance with error callback
-          unsubUser = onSnapshot(userRef, (docSnap) => {
-            if (docSnap.exists()) {
-              const uData = docSnap.data() as User;
-              setUser((prev) => ({
-                ...prev,
-                ...uData,
-                balance: typeof uData.balance === 'number' ? uData.balance : prev.balance,
-                bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : prev.bonusBalance
-              }));
-            }
-          }, (err) => {
-            console.warn('Real-time user snapshot notice:', err.message);
-          });
-
-          // Helper to sort history items in chronological order (newest first)
-          const sortChronologicalNewestFirst = <T extends { date?: string; purchaseDate?: string; id: string }>(items: T[]): T[] => {
-            return [...items].sort((a, b) => {
-              const timeA = a.date ? new Date(a.date).getTime() : (a.purchaseDate ? new Date(a.purchaseDate).getTime() : 0);
-              const timeB = b.date ? new Date(b.date).getTime() : (b.purchaseDate ? new Date(b.purchaseDate).getTime() : 0);
-              if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeB - timeA;
-              return b.id.localeCompare(a.id);
-            });
-          };
-
-          // 1. Distinct Firestore query for Financial Ledger / General Transactions with orderBy
-          let qTx;
-          try {
-            qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
-          } catch (_) {
-            qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
-          }
-          unsubTx = onSnapshot(qTx, (txSnap) => {
-            if (!txSnap.empty) {
-              const loadedTxs = sortChronologicalNewestFirst(txSnap.docs.map((d) => d.data() as WalletTransaction));
-              setTransactions(loadedTxs);
-            }
-          }, (err) => {
-            console.warn('Real-time transactions snapshot notice:', err.message);
-            const fallbackQ = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
-            onSnapshot(fallbackQ, (fSnap) => {
-              if (!fSnap.empty) setTransactions(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WalletTransaction)));
-            });
-          });
-
-          // 2. Distinct Firestore query for Deposit History Page with orderBy
-          const qDeposits = claimsAdmin
-            ? query(collection(db, 'deposits'), orderBy('date', 'desc'), limit(100))
-            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
-          unsubDeposits = onSnapshot(qDeposits, (snap) => {
-            if (!snap.empty) {
-              const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as DepositRequest));
-              setDeposits(list);
-            } else {
-              setDeposits([]);
-            }
-          }, (err) => {
-            console.warn('Real-time deposits snapshot notice:', err.message);
-            const fallbackQ = claimsAdmin
-              ? query(collection(db, 'deposits'), limit(100))
-              : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), limit(100));
-            onSnapshot(fallbackQ, (fSnap) => {
-              if (!fSnap.empty) setDeposits(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as DepositRequest)));
-            });
-          });
-
-          // 3. Distinct Firestore query for Withdrawal History Page with orderBy
-          const qWithdrawals = claimsAdmin
-            ? query(collection(db, 'withdrawals'), orderBy('date', 'desc'), limit(100))
-            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
-          unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
-            if (!snap.empty) {
-              const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as WithdrawalRequest));
-              setWithdrawals(list);
-            } else {
-              setWithdrawals([]);
-            }
-          }, (err) => {
-            console.warn('Real-time withdrawals snapshot notice:', err.message);
-            const fallbackQ = claimsAdmin
-              ? query(collection(db, 'withdrawals'), limit(100))
-              : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), limit(100));
-            onSnapshot(fallbackQ, (fSnap) => {
-              if (!fSnap.empty) setWithdrawals(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WithdrawalRequest)));
-            });
-          });
-
-          // 4. Distinct Firestore query for Roulette History Page
-          const qRoulette = query(
-            collection(db, 'transactions'),
-            where('userId', '==', fbUser.uid),
-            where('type', 'in', ['roulette_bet', 'roulette_win']),
-            limit(50)
-          );
-          unsubRoulette = onSnapshot(qRoulette, (rouletteSnap) => {
-            if (!rouletteSnap.empty) {
-              const list = rouletteSnap.docs.map((d) => d.data() as WalletTransaction);
-              setTransactions((prev) => {
-                const map = new Map();
-                prev.forEach((t) => map.set(t.id, t));
-                list.forEach((t) => map.set(t.id, t));
-                return sortChronologicalNewestFirst(Array.from(map.values()));
-              });
-            }
-          }, (err) => console.warn('Real-time roulette snapshot notice:', err.message));
-
-          // 5. Distinct Firestore query for Lottery History Page (Tickets) with orderBy
-          const qTickets = claimsAdmin
-            ? query(collection(db, 'tickets'), orderBy('purchaseDate', 'desc'), limit(100))
-            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), orderBy('purchaseDate', 'desc'), limit(100));
-          unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
-            if (!ticketSnap.empty) {
-              const list = sortChronologicalNewestFirst(ticketSnap.docs.map((d) => d.data() as PurchasedTicket));
-              setTickets(list);
-            } else {
-              setTickets([]);
-            }
-          }, (err) => {
-            console.warn('Real-time tickets snapshot notice:', err.message);
-            const fallbackQ = claimsAdmin
-              ? query(collection(db, 'tickets'), limit(100))
-              : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), limit(100));
-            onSnapshot(fallbackQ, (fSnap) => {
-              if (!fSnap.empty) setTickets(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as PurchasedTicket)));
-            });
-          });
-
-          // 6. Distinct Firestore query for Notifications
-          const qNotifications = claimsAdmin
-            ? query(collection(db, 'notifications'), limit(50))
-            : query(collection(db, 'notifications'), where('userId', '==', fbUser.uid), limit(50));
-          unsubNotifications = onSnapshot(qNotifications, (ntfSnap) => {
-            if (!ntfSnap.empty) {
-              const list = sortChronologicalNewestFirst(ntfSnap.docs.map((d) => d.data() as NotificationItem));
-              setNotifications(list);
-            }
-          }, (err) => console.warn('Real-time notifications snapshot notice:', err.message));
+          attachRealtimeUserListeners(fbUser.uid, claimsAdmin);
 
         } catch (e) {
           console.error('Error syncing user with Firestore:', e);
         }
       } else {
-        setCurrentUser(null);
+        const directSession = localStorage.getItem('betguru_direct_user_session');
+        if (directSession) {
+          try {
+            const parsed = JSON.parse(directSession);
+            if (parsed && parsed.uid) {
+              const directUid = parsed.uid;
+              resetUserDataState();
+              const directRef = doc(db, 'users', directUid);
+              const directSnap = await getDoc(directRef);
+              if (directSnap.exists()) {
+                const uData = directSnap.data() as User;
+                const isAdminEmail = (uData.email || '').toLowerCase() === 'subhasishpramanik835@gmail.com' || (uData.email || '').toLowerCase() === 'asishp92@gmail.com' || uData.role === 'admin';
+                const loadedUser: User = {
+                  ...uData,
+                  id: directUid,
+                  role: isAdminEmail ? 'admin' : (uData.role || 'user'),
+                  balance: typeof uData.balance === 'number' ? uData.balance : 100,
+                  bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : 100
+                };
+                setUser(loadedUser);
+                setCurrentUser({ uid: directUid, email: loadedUser.email, displayName: loadedUser.name } as any);
+                setUserHasAdminClaim(isAdminEmail);
+
+                attachRealtimeUserListeners(directUid, isAdminEmail);
+              }
+            }
+          } catch (e) {
+            console.warn('Error reading direct user session:', e);
+          }
+        } else {
+          setCurrentUser(null);
+          setUser(null as any);
+          resetUserDataState();
+        }
       }
       setAuthLoading(false);
     });
 
+    const handleDirectAuthChanged = () => {
+      if (!auth.currentUser) {
+        const directSession = localStorage.getItem('betguru_direct_user_session');
+        if (directSession) {
+          try {
+            const parsed = JSON.parse(directSession);
+            if (parsed && parsed.uid) {
+              resetUserDataState();
+              getDoc(doc(db, 'users', parsed.uid)).then((snap) => {
+                if (snap.exists()) {
+                  const uData = snap.data() as User;
+                  const isAdminEmail = (uData.email || '').toLowerCase() === 'subhasishpramanik835@gmail.com' || (uData.email || '').toLowerCase() === 'asishp92@gmail.com' || uData.role === 'admin';
+                  setUser({
+                    ...uData,
+                    id: parsed.uid,
+                    role: isAdminEmail ? 'admin' : (uData.role || 'user')
+                  });
+                  setCurrentUser({ uid: parsed.uid, email: uData.email, displayName: uData.name } as any);
+                  setUserHasAdminClaim(isAdminEmail);
+
+                  attachRealtimeUserListeners(parsed.uid, isAdminEmail);
+                }
+              });
+            }
+          } catch (e) {
+            console.warn('Direct auth changed listener notice:', e);
+          }
+        } else {
+          setCurrentUser(null);
+          setUser(null as any);
+          resetUserDataState();
+        }
+      }
+    };
+
+    window.addEventListener('betguru_direct_auth_changed', handleDirectAuthChanged);
+
     return () => {
       cleanupListeners();
       unsubscribeAuth();
+      window.removeEventListener('betguru_direct_auth_changed', handleDirectAuthChanged);
     };
   }, []);
 
   // Handle Logout
   const handleLogout = async () => {
     try {
+      localStorage.removeItem('betguru_direct_user_session');
+      localStorage.removeItem('betguru_user');
+      localStorage.removeItem('betguru_deposits');
+      localStorage.removeItem('betguru_withdrawals');
+      localStorage.removeItem('betguru_tickets');
+      localStorage.removeItem('betguru_transactions');
+      localStorage.removeItem('betguru_notifications');
       await signOut(auth);
       setCurrentUser(null);
+      setUser(null as any);
+      resetUserDataState();
     } catch (e) {
       console.error('Error signing out:', e);
     }
@@ -751,6 +855,11 @@ export default function App() {
     setDeposits((prev) => [newDep, ...prev]);
     persistDeposit(newDep);
 
+    // Send real-time SMTP Email notification
+    notifyDepositSubmitted(user.email, user.name, amount, method, utr).catch((err) =>
+      console.warn('Deposit submission email error:', err)
+    );
+
     // Add user notification
     const depNtf: NotificationItem = {
       id: `NTF-${Date.now()}`,
@@ -788,6 +897,13 @@ export default function App() {
 
       // Update the target user's balance in Firestore
       await persistUserBalance(dep.userId, newBal);
+
+      // Dispatch real-time email notification
+      const targetUserEmail = targetSnap.exists() ? (targetSnap.data()?.email || dep.userName) : user.email;
+      const targetUserName = targetSnap.exists() ? (targetSnap.data()?.name || dep.userName) : dep.userName;
+      notifyDepositApproved(targetUserEmail, targetUserName, dep.amount).catch((err) =>
+        console.warn('Deposit approved email error:', err)
+      );
 
       // Only update local `user` state if the admin is approving their own deposit
       if (user.id === dep.userId) {
@@ -837,6 +953,17 @@ export default function App() {
         prev.map((d) => (d.id === depositId ? updatedDep : d))
       );
       persistDeposit(updatedDep);
+
+      // Fetch user email for rejection email dispatch
+      getDoc(doc(db, 'users', dep.userId)).then((snap) => {
+        const targetEmail = snap.exists() ? (snap.data()?.email || dep.userName) : user.email;
+        const targetName = snap.exists() ? (snap.data()?.name || dep.userName) : dep.userName;
+        notifyDepositRejected(targetEmail, targetName, dep.amount, reason).catch((err) =>
+          console.warn('Deposit rejected email error:', err)
+        );
+      }).catch(() => {
+        notifyDepositRejected(user.email, dep.userName, dep.amount, reason).catch(() => {});
+      });
 
       const rejTx: WalletTransaction = {
         id: `TXN-DEP-REJ-${Date.now().toString().slice(-4)}`,
@@ -892,6 +1019,11 @@ export default function App() {
     setWithdrawals((prev) => [newWth, ...prev]);
     persistWithdrawal(newWth);
 
+    // Send real-time withdrawal submission email
+    notifyWithdrawalSubmitted(user.email, user.name, amount, accountNumber.slice(-4)).catch((err) =>
+      console.warn('Withdrawal submission email error:', err)
+    );
+
     // Add wallet ledger tx
     const wthTx: WalletTransaction = {
       id: `TXN-WTH-${Date.now().toString().slice(-4)}`,
@@ -915,6 +1047,17 @@ export default function App() {
         prev.map((w) => (w.id === withdrawalId ? updatedWth : w))
       );
       persistWithdrawal(updatedWth);
+
+      // Dispatch real-time withdrawal approval email
+      getDoc(doc(db, 'users', wth.userId)).then((snap) => {
+        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : user.email;
+        const targetName = snap.exists() ? (snap.data()?.name || wth.userName) : wth.userName;
+        notifyWithdrawalApproved(targetEmail, targetName, wth.amount, wth.accountNumber).catch((err) =>
+          console.warn('Withdrawal approved email error:', err)
+        );
+      }).catch(() => {
+        notifyWithdrawalApproved(user.email, wth.userName, wth.amount, wth.accountNumber).catch(() => {});
+      });
 
       setTransactions((prev) =>
         prev.map((tx) =>
@@ -947,6 +1090,17 @@ export default function App() {
         prev.map((w) => (w.id === withdrawalId ? updatedWth : w))
       );
       persistWithdrawal(updatedWth);
+
+      // Dispatch real-time withdrawal rejection email
+      getDoc(doc(db, 'users', wth.userId)).then((snap) => {
+        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : user.email;
+        const targetName = snap.exists() ? (snap.data()?.name || wth.userName) : wth.userName;
+        notifyWithdrawalRejected(targetEmail, targetName, wth.amount, reason).catch((err) =>
+          console.warn('Withdrawal rejected email error:', err)
+        );
+      }).catch(() => {
+        notifyWithdrawalRejected(user.email, wth.userName, wth.amount, reason).catch(() => {});
+      });
 
       // Refund user balance in Firestore
       try {
@@ -1065,6 +1219,10 @@ export default function App() {
     }));
     if (user?.id) persistUserBalance(user.id, newBal);
 
+    notifyBonusCredited(user.email, user.name, bonusAmount, `Weekly VIP Club Bonus (${user.vipLevel})`).catch((err) =>
+      console.warn('VIP bonus email error:', err)
+    );
+
     const vipTx: WalletTransaction = {
       id: `TXN-VIP-${Date.now().toString().slice(-4)}`,
       userId: user.id,
@@ -1099,6 +1257,10 @@ export default function App() {
       lastSpinTime: Date.now()
     }));
     if (user?.id) persistUserBalance(user.id, newBal);
+
+    notifyBonusCredited(user.email, user.name, rewardAmount, 'Daily Lucky Spin Wheel Bonus').catch((err) =>
+      console.warn('Wheel bonus email error:', err)
+    );
 
     const wheelTx: WalletTransaction = {
       id: `TXN-WHEEL-${Date.now().toString().slice(-4)}`,

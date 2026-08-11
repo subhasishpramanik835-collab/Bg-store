@@ -102,6 +102,19 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Broadcasts collection
+    match /broadcasts/{broadcastId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() || true;
+      allow delete: if isAdmin();
+    }
+
+    // System Settings collection (e.g. registration_config, smtp_config)
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if isSignedIn() || true;
+    }
+
     // Default catch-all
     match /{document=**} {
       allow read, write: if isSignedIn() || true;
