@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Dices, Trophy, Sparkles, Gift } from 'lucide-react';
 import { soundFx } from '../utils/audio';
+import { logAnalyticsEvent } from '../utils/analytics';
 
 interface LuckyWheelModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
   const handleSpin = () => {
     if (spinning || (!canSpin && wonReward === null)) return;
 
+    logAnalyticsEvent('game_start', { gameType: 'lucky_wheel' });
     soundFx.playClick();
     setSpinning(true);
     setWonReward(null);

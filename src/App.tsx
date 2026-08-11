@@ -26,9 +26,14 @@ import { AuthScreen } from './components/AuthScreen';
 import { LiveRoulette } from './components/LiveRoulette';
 import { LotterySection } from './components/LotterySection';
 import { WithdrawalSection } from './components/WithdrawalSection';
+import { SuperCarDrawSection } from './components/SuperCarDrawSection';
+import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
+import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor } from './types';
+import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo } from './utils/supercar';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, onSnapshot, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { logAnalyticsEvent } from './utils/analytics';
 import confetti from 'canvas-confetti';
 
 export default function App() {
@@ -52,6 +57,13 @@ export default function App() {
   const [isLiveRouletteOpen, setIsLiveRouletteOpen] = useState<boolean>(false);
   const [buyTicketDraw, setBuyTicketDraw] = useState<LotteryDraw | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+
+  // SuperCar States
+  const [supercarConfig, setSupercarConfig] = useState<SuperCarConfig>(DEFAULT_SUPERCAR_CONFIG);
+  const [supercarCurrentIssue, setSupercarCurrentIssue] = useState<SuperCarDrawIssue | null>(null);
+  const [supercarPastDraws, setSupercarPastDraws] = useState<SuperCarDrawIssue[]>([]);
+  const [superCarWinToast, setSuperCarWinToast] = useState<SuperCarWinToastData | null>(null);
+  const notifiedWinTicketIdsRef = React.useRef<Set<string>>(new Set());
 
   // Firebase Auth State
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -113,6 +125,15 @@ export default function App() {
     }
   };
 
+  const persistNotification = async (ntf: NotificationItem) => {
+    try {
+      const ntfRef = doc(db, 'notifications', ntf.id);
+      await setDoc(ntfRef, ntf, { merge: true });
+    } catch (err) {
+      console.error('Error persisting notification to Firestore:', err);
+    }
+  };
+
   // Initialize Firebase connection test & auth listener
   useEffect(() => {
     testConnection();
@@ -123,6 +144,7 @@ export default function App() {
     let unsubWithdrawals: (() => void) | null = null;
     let unsubTickets: (() => void) | null = null;
     let unsubRoulette: (() => void) | null = null;
+    let unsubNotifications: (() => void) | null = null;
 
     const cleanupListeners = () => {
       if (unsubUser) { try { unsubUser(); } catch (_) {} unsubUser = null; }
@@ -131,6 +153,7 @@ export default function App() {
       if (unsubWithdrawals) { try { unsubWithdrawals(); } catch (_) {} unsubWithdrawals = null; }
       if (unsubTickets) { try { unsubTickets(); } catch (_) {} unsubTickets = null; }
       if (unsubRoulette) { try { unsubRoulette(); } catch (_) {} unsubRoulette = null; }
+      if (unsubNotifications) { try { unsubNotifications(); } catch (_) {} unsubNotifications = null; }
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
@@ -228,44 +251,77 @@ export default function App() {
             console.warn('Real-time user snapshot notice:', err.message);
           });
 
-          // 1. Distinct Firestore query for Financial Ledger / General Transactions
-          const qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
+          // Helper to sort history items in chronological order (newest first)
+          const sortChronologicalNewestFirst = <T extends { date?: string; purchaseDate?: string; id: string }>(items: T[]): T[] => {
+            return [...items].sort((a, b) => {
+              const timeA = a.date ? new Date(a.date).getTime() : (a.purchaseDate ? new Date(a.purchaseDate).getTime() : 0);
+              const timeB = b.date ? new Date(b.date).getTime() : (b.purchaseDate ? new Date(b.purchaseDate).getTime() : 0);
+              if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeB - timeA;
+              return b.id.localeCompare(a.id);
+            });
+          };
+
+          // 1. Distinct Firestore query for Financial Ledger / General Transactions with orderBy
+          let qTx;
+          try {
+            qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
+          } catch (_) {
+            qTx = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
+          }
           unsubTx = onSnapshot(qTx, (txSnap) => {
             if (!txSnap.empty) {
-              const loadedTxs = txSnap.docs.map((d) => d.data() as WalletTransaction);
+              const loadedTxs = sortChronologicalNewestFirst(txSnap.docs.map((d) => d.data() as WalletTransaction));
               setTransactions(loadedTxs);
             }
           }, (err) => {
             console.warn('Real-time transactions snapshot notice:', err.message);
+            const fallbackQ = query(collection(db, 'transactions'), where('userId', '==', fbUser.uid), limit(100));
+            onSnapshot(fallbackQ, (fSnap) => {
+              if (!fSnap.empty) setTransactions(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WalletTransaction)));
+            });
           });
 
-          // 2. Distinct Firestore query for Deposit History Page
+          // 2. Distinct Firestore query for Deposit History Page with orderBy
           const qDeposits = claimsAdmin
-            ? query(collection(db, 'deposits'), limit(100))
-            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), limit(100));
+            ? query(collection(db, 'deposits'), orderBy('date', 'desc'), limit(100))
+            : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
           unsubDeposits = onSnapshot(qDeposits, (snap) => {
             if (!snap.empty) {
-              const list = snap.docs.map((d) => d.data() as DepositRequest);
-              list.sort((a, b) => (b.id > a.id ? 1 : -1));
+              const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as DepositRequest));
               setDeposits(list);
             } else {
               setDeposits([]);
             }
-          }, (err) => console.warn('Real-time deposits snapshot notice:', err.message));
+          }, (err) => {
+            console.warn('Real-time deposits snapshot notice:', err.message);
+            const fallbackQ = claimsAdmin
+              ? query(collection(db, 'deposits'), limit(100))
+              : query(collection(db, 'deposits'), where('userId', '==', fbUser.uid), limit(100));
+            onSnapshot(fallbackQ, (fSnap) => {
+              if (!fSnap.empty) setDeposits(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as DepositRequest)));
+            });
+          });
 
-          // 3. Distinct Firestore query for Withdrawal History Page
+          // 3. Distinct Firestore query for Withdrawal History Page with orderBy
           const qWithdrawals = claimsAdmin
-            ? query(collection(db, 'withdrawals'), limit(100))
-            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), limit(100));
+            ? query(collection(db, 'withdrawals'), orderBy('date', 'desc'), limit(100))
+            : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), orderBy('date', 'desc'), limit(100));
           unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
             if (!snap.empty) {
-              const list = snap.docs.map((d) => d.data() as WithdrawalRequest);
-              list.sort((a, b) => (b.id > a.id ? 1 : -1));
+              const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as WithdrawalRequest));
               setWithdrawals(list);
             } else {
               setWithdrawals([]);
             }
-          }, (err) => console.warn('Real-time withdrawals snapshot notice:', err.message));
+          }, (err) => {
+            console.warn('Real-time withdrawals snapshot notice:', err.message);
+            const fallbackQ = claimsAdmin
+              ? query(collection(db, 'withdrawals'), limit(100))
+              : query(collection(db, 'withdrawals'), where('userId', '==', fbUser.uid), limit(100));
+            onSnapshot(fallbackQ, (fSnap) => {
+              if (!fSnap.empty) setWithdrawals(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WithdrawalRequest)));
+            });
+          });
 
           // 4. Distinct Firestore query for Roulette History Page
           const qRoulette = query(
@@ -281,23 +337,42 @@ export default function App() {
                 const map = new Map();
                 prev.forEach((t) => map.set(t.id, t));
                 list.forEach((t) => map.set(t.id, t));
-                return Array.from(map.values());
+                return sortChronologicalNewestFirst(Array.from(map.values()));
               });
             }
           }, (err) => console.warn('Real-time roulette snapshot notice:', err.message));
 
-          // 5. Distinct Firestore query for Lottery History Page (Tickets)
+          // 5. Distinct Firestore query for Lottery History Page (Tickets) with orderBy
           const qTickets = claimsAdmin
-            ? query(collection(db, 'tickets'), limit(100))
-            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), limit(100));
+            ? query(collection(db, 'tickets'), orderBy('purchaseDate', 'desc'), limit(100))
+            : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), orderBy('purchaseDate', 'desc'), limit(100));
           unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
             if (!ticketSnap.empty) {
-              const list = ticketSnap.docs.map((d) => d.data() as PurchasedTicket);
+              const list = sortChronologicalNewestFirst(ticketSnap.docs.map((d) => d.data() as PurchasedTicket));
               setTickets(list);
             } else {
               setTickets([]);
             }
-          }, (err) => console.warn('Real-time tickets snapshot notice:', err.message));
+          }, (err) => {
+            console.warn('Real-time tickets snapshot notice:', err.message);
+            const fallbackQ = claimsAdmin
+              ? query(collection(db, 'tickets'), limit(100))
+              : query(collection(db, 'tickets'), where('userId', '==', fbUser.uid), limit(100));
+            onSnapshot(fallbackQ, (fSnap) => {
+              if (!fSnap.empty) setTickets(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as PurchasedTicket)));
+            });
+          });
+
+          // 6. Distinct Firestore query for Notifications
+          const qNotifications = claimsAdmin
+            ? query(collection(db, 'notifications'), limit(50))
+            : query(collection(db, 'notifications'), where('userId', '==', fbUser.uid), limit(50));
+          unsubNotifications = onSnapshot(qNotifications, (ntfSnap) => {
+            if (!ntfSnap.empty) {
+              const list = sortChronologicalNewestFirst(ntfSnap.docs.map((d) => d.data() as NotificationItem));
+              setNotifications(list);
+            }
+          }, (err) => console.warn('Real-time notifications snapshot notice:', err.message));
 
         } catch (e) {
           console.error('Error syncing user with Firestore:', e);
@@ -328,6 +403,211 @@ export default function App() {
   useEffect(() => {
     saveState({ user, draws, deposits, withdrawals, tickets, transactions, notifications });
   }, [user, draws, deposits, withdrawals, tickets, transactions, notifications]);
+
+  // SuperCar Config & Draws Real-time Listener
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, 'supercar_config', 'main'), (snap) => {
+      if (snap.exists()) {
+        const remoteData = snap.data();
+        console.log('[App.tsx] Real-time supercar_config updated from Firestore:', remoteData);
+        setSupercarConfig((prev) => ({ ...prev, ...remoteData }));
+      }
+    }, (err) => console.warn('Supercar config listener notice:', err.message));
+
+    const qSuperCar = query(collection(db, 'supercar_draws'), limit(50));
+    const unsubDraws = onSnapshot(qSuperCar, (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs.map((d) => d.data() as SuperCarDrawIssue);
+        list.sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeB - timeA;
+          return (b.issueId || '').localeCompare(a.issueId || '');
+        });
+        setSupercarPastDraws(list);
+      } else {
+        setSupercarPastDraws([]);
+      }
+    }, (err) => console.warn('Supercar draws listener notice:', err.message));
+
+    return () => {
+      unsubConfig();
+      unsubDraws();
+    };
+  }, []);
+
+  // Robust boolean check for SuperCar draw section visibility
+  const isSuperCarEnabled = supercarConfig?.enabled === undefined
+    ? true
+    : (supercarConfig.enabled === true || String(supercarConfig.enabled).toLowerCase() === 'true');
+
+  // Forced debug log of supercarConfig upon mount/update to verify Red car image URL
+  useEffect(() => {
+    const redCarInfo = getSuperCarInfo('red', supercarConfig);
+    console.log('[App.tsx] Mount/Update supercarConfig state:', supercarConfig);
+    console.log('[App.tsx] supercarConfig.enabled raw:', supercarConfig?.enabled, 'parsed isSuperCarEnabled:', isSuperCarEnabled);
+    console.log('[App.tsx] Red Car Image URL:', redCarInfo.image);
+    console.log('[App.tsx] Red Car Full Details:', redCarInfo);
+  }, [supercarConfig, isSuperCarEnabled]);
+
+  // SuperCar Ticket Purchase Handler
+  const handleConfirmSuperCarTicketBuy = async (carColor: SuperCarColor, quantity: number, totalCost: number) => {
+    logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost }, user.id, user.email);
+
+    if (user.balance < totalCost) {
+      alert(`Insufficient Wallet Balance! Required ₹${totalCost}, Available ₹${user.balance}. Please deposit funds.`);
+      setIsDepositOpen(true);
+      return;
+    }
+
+    const newBal = user.balance - totalCost;
+    const earnedVipPts = Math.floor(totalCost / 10);
+    const updatedVipPts = user.vipPoints + earnedVipPts;
+
+    setUser((prev) => ({
+      ...prev,
+      balance: newBal,
+      vipPoints: updatedVipPts
+    }));
+    if (user?.id) persistUserBalance(user.id, newBal);
+
+    const nowStr = new Date().toLocaleString('en-IN');
+    const newTickets: PurchasedTicket[] = [];
+
+    for (let i = 0; i < quantity; i++) {
+      const ticketNum = `CAR-${carColor.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const newTicket: PurchasedTicket = {
+        id: `TKT-SC-${Date.now()}-${i}`,
+        userId: user.id,
+        drawId: `SUPERCAR-${Date.now().toString().slice(-6)}`,
+        drawTitle: `Super Car - ${carColor.toUpperCase()} CAR`,
+        category: 'Three Super Car Draw',
+        selectedNumbers: [carColor.toUpperCase()],
+        ticketNumber: ticketNum,
+        price: supercarConfig.ticketPrice || 100,
+        purchaseDate: nowStr,
+        drawDate: 'Today 30-min Draw',
+        status: 'active',
+        selectedCar: carColor
+      };
+      newTickets.push(newTicket);
+    }
+
+    setTickets((prev) => [...newTickets, ...prev]);
+    newTickets.forEach((t) => persistTicket(t));
+
+    const tx: WalletTransaction = {
+      id: `TXN-SUPERCAR-${Date.now().toString().slice(-4)}`,
+      userId: user.id,
+      type: 'ticket_buy',
+      amount: -totalCost,
+      description: `Purchased ${quantity}x ${carColor.toUpperCase()} Super Car Ticket(s) (+${earnedVipPts} VIP Pts)`,
+      status: 'completed',
+      date: nowStr
+    };
+    setTransactions((prev) => [tx, ...prev]);
+    persistTransaction(tx);
+
+    triggerConfetti();
+  };
+
+  // SuperCar Draw Resolved Handler
+  const handleSuperCarDrawResolved = async (issueId: string, winningCar: SuperCarColor) => {
+    soundFx.playWinFanfare();
+    triggerConfetti();
+
+    let totalWonAmount = 0;
+    const multiplier = supercarConfig.prizeMultiplier || 2.8;
+
+    const updatedTickets = tickets.map((t) => {
+      if (t.category === 'Three Super Car Draw' && t.status === 'active') {
+        if (t.selectedCar === winningCar) {
+          const winAmt = Math.round(t.price * multiplier);
+          totalWonAmount += winAmt;
+          const updatedT = { ...t, status: 'win' as const, winAmount: winAmt };
+          persistTicket(updatedT);
+          return updatedT;
+        } else {
+          const updatedT = { ...t, status: 'loss' as const };
+          persistTicket(updatedT);
+          return updatedT;
+        }
+      }
+      return t;
+    });
+
+    setTickets(updatedTickets);
+
+    if (totalWonAmount > 0) {
+      const newBal = user.balance + totalWonAmount;
+      setUser((prev) => ({ ...prev, balance: newBal }));
+      if (user?.id) persistUserBalance(user.id, newBal);
+
+      const winTx: WalletTransaction = {
+        id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
+        userId: user.id,
+        type: 'ticket_win',
+        amount: totalWonAmount,
+        description: `🏆 WON Super Car Draw Jackpot (${winningCar.toUpperCase()} Car Winner!)`,
+        status: 'completed',
+        date: new Date().toLocaleString('en-IN')
+      };
+      setTransactions((prev) => [winTx, ...prev]);
+      persistTransaction(winTx);
+
+      // Trigger High-Visibility Toast Notification
+      setSuperCarWinToast({
+        id: `sc-toast-manual-${Date.now()}`,
+        winningCar,
+        amountWon: totalWonAmount,
+        issueId
+      });
+    }
+
+    try {
+      const drawIssueDoc: SuperCarDrawIssue = {
+        id: issueId,
+        issueId,
+        drawTime: new Date().toLocaleString('en-IN'),
+        winningCar,
+        status: 'completed'
+      };
+      await setDoc(doc(db, 'supercar_draws', issueId), drawIssueDoc, { merge: true });
+    } catch (err) {
+      console.error('Error recording supercar draw result:', err);
+    }
+  };
+
+  // Automated Real-time SuperCar Win Toast Detector for user tickets
+  useEffect(() => {
+    if (!tickets || tickets.length === 0) return;
+
+    const winningSuperCarTickets = tickets.filter(
+      (t) => t.category === 'Three Super Car Draw' && t.status === 'win' && (t.winAmount || 0) > 0
+    );
+
+    for (const t of winningSuperCarTickets) {
+      if (!notifiedWinTicketIdsRef.current.has(t.id)) {
+        notifiedWinTicketIdsRef.current.add(t.id);
+        const winningCar = (t.selectedCar || (t.selectedNumbers?.[0]?.toLowerCase() as SuperCarColor) || 'red') as SuperCarColor;
+        const amountWon = t.winAmount || Math.round((t.price || 100) * (supercarConfig.prizeMultiplier || 2.8));
+
+        setSuperCarWinToast({
+          id: `sc-toast-auto-${t.id}`,
+          winningCar,
+          amountWon,
+          issueId: t.drawId
+        });
+        try {
+          soundFx.playWinFanfare();
+        } catch (e) {
+          console.warn('Audio play notice:', e);
+        }
+        triggerConfetti();
+        break;
+      }
+    }
+  }, [tickets, supercarPastDraws, supercarConfig]);
 
   // Audio mute toggle
   const handleToggleMute = () => {
@@ -453,6 +733,8 @@ export default function App() {
 
   // Handle Deposit Submission
   const handleDepositSubmit = (amount: number, method: PaymentMethodType, utr: string, screenshotUrl: string) => {
+    logAnalyticsEvent('deposit_attempt', { amount, method, utr }, user.id, user.email);
+
     const newDep: DepositRequest = {
       id: `DEP-${Math.floor(1000 + Math.random() * 9000)}`,
       userId: user.id,
@@ -483,7 +765,7 @@ export default function App() {
   };
 
   // Handle Admin Approve Deposit
-  const handleAdminApproveDeposit = (depositId: string) => {
+  const handleAdminApproveDeposit = async (depositId: string) => {
     const dep = deposits.find((d) => d.id === depositId);
     if (!dep || dep.status !== 'pending') return;
 
@@ -493,13 +775,30 @@ export default function App() {
     );
     persistDeposit(updatedDep);
 
-    // Add funds to user wallet & persist
-    const newBal = user.balance + dep.amount;
-    setUser((prev) => ({
-      ...prev,
-      balance: newBal
-    }));
-    persistUserBalance(dep.userId, newBal);
+    try {
+      // Fetch the target user's current doc from Firestore to get their real balance
+      const targetUserRef = doc(db, 'users', dep.userId);
+      const targetSnap = await getDoc(targetUserRef);
+      let targetUserBal = 0;
+      if (targetSnap.exists()) {
+        const uData = targetSnap.data();
+        targetUserBal = typeof uData?.balance === 'number' ? uData.balance : 0;
+      }
+      const newBal = targetUserBal + dep.amount;
+
+      // Update the target user's balance in Firestore
+      await persistUserBalance(dep.userId, newBal);
+
+      // Only update local `user` state if the admin is approving their own deposit
+      if (user.id === dep.userId) {
+        setUser((prev) => ({
+          ...prev,
+          balance: newBal
+        }));
+      }
+    } catch (err) {
+      console.error('Error updating target user balance upon deposit approval:', err);
+    }
 
     // Add transaction & persist
     const depTx: WalletTransaction = {
@@ -525,6 +824,7 @@ export default function App() {
       read: false
     };
     setNotifications((prev) => [approveNtf, ...prev]);
+    persistNotification(approveNtf);
     triggerConfetti();
   };
 
@@ -549,11 +849,25 @@ export default function App() {
       };
       setTransactions((prev) => [rejTx, ...prev]);
       persistTransaction(rejTx);
+
+      const rejectNtf: NotificationItem = {
+        id: `NTF-${Date.now()}`,
+        userId: dep.userId,
+        title: `❌ Deposit Rejected (₹${dep.amount})`,
+        message: `Reason: ${reason}. Please re-upload valid UTR / screenshot.`,
+        type: 'deposit',
+        date: 'Just now',
+        read: false
+      };
+      setNotifications((prev) => [rejectNtf, ...prev]);
+      persistNotification(rejectNtf);
     }
   };
 
   // Handle Withdrawal Submission
   const handleWithdrawSubmit = (amount: number, fullName: string, accountNumber: string, ifscCode: string, upiId: string) => {
+    logAnalyticsEvent('withdrawal_submission', { amount, fullName, accountNumber: `••••${accountNumber.slice(-4)}`, upiId }, user.id, user.email);
+
     const newBal = Math.max(0, user.balance - amount);
     setUser((prev) => ({
       ...prev,
@@ -620,11 +934,12 @@ export default function App() {
         read: false
       };
       setNotifications((prev) => [approveNtf, ...prev]);
+      persistNotification(approveNtf);
     }
   };
 
   // Handle Admin Reject Withdrawal
-  const handleAdminRejectWithdrawal = (withdrawalId: string, reason: string) => {
+  const handleAdminRejectWithdrawal = async (withdrawalId: string, reason: string) => {
     const wth = withdrawals.find((w) => w.id === withdrawalId);
     if (wth) {
       const updatedWth: WithdrawalRequest = { ...wth, status: 'rejected', rejectReason: reason };
@@ -633,13 +948,27 @@ export default function App() {
       );
       persistWithdrawal(updatedWth);
 
-      // Refund user balance & persist
-      const newBal = user.balance + wth.amount;
-      setUser((prev) => ({
-        ...prev,
-        balance: newBal
-      }));
-      persistUserBalance(wth.userId, newBal);
+      // Refund user balance in Firestore
+      try {
+        const targetUserRef = doc(db, 'users', wth.userId);
+        const targetSnap = await getDoc(targetUserRef);
+        let targetUserBal = 0;
+        if (targetSnap.exists()) {
+          const uData = targetSnap.data();
+          targetUserBal = typeof uData?.balance === 'number' ? uData.balance : 0;
+        }
+        const newBal = targetUserBal + wth.amount;
+        await persistUserBalance(wth.userId, newBal);
+
+        if (user.id === wth.userId) {
+          setUser((prev) => ({
+            ...prev,
+            balance: newBal
+          }));
+        }
+      } catch (err) {
+        console.error('Error refunding target user balance upon withdrawal rejection:', err);
+      }
 
       setTransactions((prev) =>
         prev.map((tx) =>
@@ -659,11 +988,14 @@ export default function App() {
         read: false
       };
       setNotifications((prev) => [rejectNtf, ...prev]);
+      persistNotification(rejectNtf);
     }
   };
 
   // Handle Ticket Purchase Confirmation
   const handleConfirmTicketBuy = (draw: LotteryDraw, ticketDigitsArray: number[][], totalPrice: number) => {
+    logAnalyticsEvent('ticket_buy', { gameType: 'lottery', drawId: draw.id, drawTitle: draw.title, ticketCount: ticketDigitsArray.length, totalPrice }, user.id, user.email);
+
     // Award VIP Points (1 Point per ₹10 spent)
     const earnedVipPts = Math.floor(totalPrice / 10);
 
@@ -961,6 +1293,19 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Three Super Car Draw Live Section */}
+                {isSuperCarEnabled && (
+                  <SuperCarDrawSection
+                    userBalance={user.balance}
+                    config={supercarConfig}
+                    currentIssue={supercarCurrentIssue}
+                    userTickets={tickets.filter((t) => t.category === 'Three Super Car Draw')}
+                    pastDraws={supercarPastDraws}
+                    onConfirmBuyTicket={handleConfirmSuperCarTicketBuy}
+                    onDrawResolved={handleSuperCarDrawResolved}
+                  />
+                )}
+
                 {/* Single Combined Compact Lottery Section */}
                 <LotterySection
                   draws={draws}
@@ -997,10 +1342,23 @@ export default function App() {
             )}
 
             {activeTab === 'lottery' && (
-              <LotterySection
-                draws={draws}
-                onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
-              />
+              <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 pb-28">
+                {isSuperCarEnabled && (
+                  <SuperCarDrawSection
+                    userBalance={user.balance}
+                    config={supercarConfig}
+                    currentIssue={supercarCurrentIssue}
+                    userTickets={tickets.filter((t) => t.category === 'Three Super Car Draw')}
+                    pastDraws={supercarPastDraws}
+                    onConfirmBuyTicket={handleConfirmSuperCarTicketBuy}
+                    onDrawResolved={handleSuperCarDrawResolved}
+                  />
+                )}
+                <LotterySection
+                  draws={draws}
+                  onBuyTicket={(selectedDraw) => setBuyTicketDraw(selectedDraw)}
+                />
+              </div>
             )}
 
             {activeTab === 'withdrawal' && (
@@ -1024,6 +1382,8 @@ export default function App() {
             {activeTab === 'results' && (
               <ResultsView
                 draws={draws}
+                supercarPastDraws={supercarPastDraws}
+                supercarConfig={supercarConfig}
                 onOpenBuyTicket={(d) => setBuyTicketDraw(d)}
               />
             )}
@@ -1137,6 +1497,14 @@ export default function App() {
         onClose={() => setIsLuckyWheelOpen(false)}
         onClaimReward={handleClaimWheelReward}
         lastSpinTime={user.lastSpinTime}
+      />
+
+      {/* Automated High-Visibility SuperCar Draw Win Toast */}
+      <SuperCarWinToast
+        toast={superCarWinToast}
+        config={supercarConfig}
+        onClose={() => setSuperCarWinToast(null)}
+        onViewTickets={() => setActiveTab('tickets')}
       />
 
     </div>

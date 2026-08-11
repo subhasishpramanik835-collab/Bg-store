@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { X, CheckCircle2, Copy, Upload, ArrowRight, ShieldCheck, QrCode, AlertCircle, Sparkles } from 'lucide-react';
-import { PaymentMethodType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, CheckCircle2, Copy, Upload, ArrowRight, ShieldCheck, QrCode, AlertCircle, Sparkles, Info } from 'lucide-react';
+import { PaymentMethodType, PaymentConfig } from '../types';
 import { soundFx } from '../utils/audio';
+import { logAnalyticsEvent } from '../utils/analytics';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -11,11 +14,11 @@ interface DepositModalProps {
 
 const PRESET_AMOUNTS = [100, 500, 1000, 2000, 5000, 10000];
 
-const PAYMENT_METHODS: { id: PaymentMethodType; name: string; color: string; upiId: string; icon: string }[] = [
-  { id: 'phonepe', name: 'PhonePe', color: 'from-purple-600 to-indigo-700', upiId: 'betguru.pay@ybl', icon: '📱' },
-  { id: 'gpay', name: 'Google Pay', color: 'from-blue-600 to-cyan-600', upiId: 'betguru.gpay@okaxis', icon: '💳' },
-  { id: 'paytm', name: 'Paytm UPI', color: 'from-sky-500 to-blue-700', upiId: 'betguru@paytm', icon: '🔷' },
-  { id: 'upi', name: 'BHIM / Any UPI', color: 'from-amber-600 to-emerald-600', upiId: 'betguru.official@upi', icon: '⚡' }
+const PAYMENT_METHODS: { id: PaymentMethodType; name: string; color: string; icon: string }[] = [
+  { id: 'phonepe', name: 'PhonePe', color: 'from-purple-600 to-indigo-700', icon: '📱' },
+  { id: 'gpay', name: 'Google Pay', color: 'from-blue-600 to-cyan-600', icon: '💳' },
+  { id: 'paytm', name: 'Paytm UPI', color: 'from-sky-500 to-blue-700', icon: '🔷' },
+  { id: 'upi', name: 'BHIM / Any UPI', color: 'from-amber-600 to-emerald-600', icon: '⚡' }
 ];
 
 export const DepositModal: React.FC<DepositModalProps> = ({
@@ -31,13 +34,66 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig>({
+    upiId: 'betguru.pay@ybl',
+    qrCodeUrl: '',
+    accountName: 'BETGURU OFFICIAL ENTERPRISES',
+    minDeposit: 100,
+    maxDeposit: 100000,
+    instructions: '1. Scan QR code or copy UPI ID.\n2. Complete payment in PhonePe, GPay, Paytm or BHIM.\n3. Enter 12-digit UTR/Reference number.\n4. Upload payment screenshot proof and submit.'
+  });
+
+  // Subscribe to real-time payment config from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'payment_config', 'main'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as PaymentConfig;
+        setPaymentConfig((prev) => ({ ...prev, ...data }));
+      }
+    }, (err) => console.warn('Payment config listener notice:', err.message));
+
+    return () => unsub();
+  }, []);
 
   if (!isOpen) return null;
 
   const currentMethod = PAYMENT_METHODS.find(m => m.id === method) || PAYMENT_METHODS[0];
+  const activeUpiId = paymentConfig.upiId || 'betguru.pay@ybl';
+
+  // Generate UPI Deep Link and Auto-Redirect
+  const triggerUpiRedirect = (targetApp?: PaymentMethodType, targetAmt?: number) => {
+    const amtToPay = targetAmt || amount;
+    const upiId = activeUpiId;
+    const payeeName = paymentConfig.accountName || 'BETGURU OFFICIAL ENTERPRISES';
+    const note = 'Wallet Deposit';
+
+    // Standard Universal UPI Deep Link
+    let upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amtToPay}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+    if (targetApp === 'phonepe') {
+      upiUrl = `phonepe://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amtToPay}&cu=INR&tn=${encodeURIComponent(note)}`;
+    } else if (targetApp === 'gpay') {
+      upiUrl = `tez://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amtToPay}&cu=INR&tn=${encodeURIComponent(note)}`;
+    } else if (targetApp === 'paytm') {
+      upiUrl = `paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amtToPay}&cu=INR&tn=${encodeURIComponent(note)}`;
+    }
+
+    soundFx.playClick();
+    logAnalyticsEvent('deposit_attempt', {
+      type: 'quick_upi_link',
+      targetApp: targetApp || method,
+      amount: amtToPay,
+      upiId
+    });
+    try {
+      window.location.href = upiUrl;
+    } catch (err) {
+      console.warn('UPI redirection notice:', err);
+    }
+  };
 
   const handleCopyUpi = () => {
-    navigator.clipboard.writeText(currentMethod.upiId);
+    navigator.clipboard.writeText(activeUpiId);
     setCopiedUpi(true);
     soundFx.playClick();
     setTimeout(() => setCopiedUpi(false), 2000);
@@ -114,8 +170,13 @@ export const DepositModal: React.FC<DepositModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
-    if (amount < 100) {
-      setErrorMsg('Minimum deposit amount is ₹100.');
+    if (amount < (paymentConfig.minDeposit || 100)) {
+      setErrorMsg(`Minimum deposit amount is ₹${paymentConfig.minDeposit || 100}.`);
+      return;
+    }
+
+    if (paymentConfig.maxDeposit && amount > paymentConfig.maxDeposit) {
+      setErrorMsg(`Maximum deposit amount is ₹${paymentConfig.maxDeposit.toLocaleString('en-IN')}.`);
       return;
     }
 
@@ -205,23 +266,33 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             
             {/* Step 1: Select Payment Method */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2 block">
-                1. Select Payment Method
+              <label className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2 flex items-center justify-between">
+                <span>1. Select Payment Method</span>
+                <span className="text-[10px] text-emerald-400 font-mono">Auto App Redirect Enabled</span>
               </label>
               <div className="grid grid-cols-2 gap-2.5">
                 {PAYMENT_METHODS.map((pm) => (
                   <button
                     key={pm.id}
                     type="button"
-                    onClick={() => { soundFx.playClick(); setMethod(pm.id); }}
-                    className={`p-3 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+                    onClick={() => {
+                      soundFx.playClick();
+                      setMethod(pm.id);
+                      triggerUpiRedirect(pm.id, amount);
+                    }}
+                    className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
                       method === pm.id
                         ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border-amber-400 text-white shadow-md'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
-                    <span className="text-xl">{pm.icon}</span>
-                    <span className="font-bold text-xs sm:text-sm">{pm.name}</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">{pm.icon}</span>
+                      <span className="font-bold text-xs sm:text-sm">{pm.name}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                      PAY
+                    </span>
                   </button>
                 ))}
               </div>
@@ -237,14 +308,20 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   <button
                     key={amt}
                     type="button"
-                    onClick={() => handleAmountSelect(amt)}
-                    className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                    onClick={() => {
+                      handleAmountSelect(amt);
+                      triggerUpiRedirect(method, amt);
+                    }}
+                    className={`py-2.5 rounded-xl text-xs font-mono font-bold border transition-all flex flex-col items-center justify-center cursor-pointer ${
                       amount === amt
                         ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
                         : 'bg-slate-950/80 border-slate-800 text-amber-300 hover:border-amber-500/40'
                     }`}
                   >
-                    +₹{amt.toLocaleString('en-IN')}
+                    <span>+₹{amt.toLocaleString('en-IN')}</span>
+                    <span className={`text-[9px] font-normal ${amount === amt ? 'text-slate-900' : 'text-slate-500'}`}>
+                      Tap to Open App
+                    </span>
                   </button>
                 ))}
               </div>
@@ -264,32 +341,50 @@ export const DepositModal: React.FC<DepositModalProps> = ({
               </div>
             </div>
 
+            {/* DIRECT HIGH-IMPACT AUTO-REDIRECT BUTTON */}
+            <button
+              type="button"
+              onClick={() => triggerUpiRedirect(method, amount)}
+              className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-emerald-950/50 flex items-center justify-center gap-2 border border-emerald-400/30 transition-all hover:scale-[1.01] active:scale-95 cursor-pointer font-mono"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-300 animate-pulse" />
+              <span>⚡ Open {currentMethod.name} App to Pay ₹{amount.toLocaleString('en-IN')}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
             {/* Payment Details & QR Code */}
             <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/20 flex flex-col sm:flex-row items-center gap-4">
-              <div className="w-28 h-28 bg-white p-2 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-lg">
-                {/* Simulated QR Code matrix visual */}
-                <div className="w-full h-full bg-slate-950 p-1.5 rounded flex flex-col justify-between">
-                  <div className="flex justify-between">
-                    <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
-                    <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
+              <div className="w-28 h-28 bg-white p-1.5 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-lg overflow-hidden">
+                {paymentConfig.qrCodeUrl ? (
+                  <img src={paymentConfig.qrCodeUrl} alt="UPI Payment QR Code" className="w-full h-full object-contain" />
+                ) : (
+                  /* Fallback QR Code Matrix Visual */
+                  <div className="w-full h-full bg-slate-950 p-1.5 rounded flex flex-col justify-between">
+                    <div className="flex justify-between">
+                      <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
+                      <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
+                    </div>
+                    <div className="text-[8px] font-mono font-bold text-amber-400 text-center tracking-tighter">
+                      SCAN TO PAY
+                    </div>
+                    <div className="flex justify-between">
+                      <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
+                      <div className="w-2 h-2 bg-emerald-400"></div>
+                    </div>
                   </div>
-                  <div className="text-[8px] font-mono font-bold text-amber-400 text-center tracking-tighter">
-                    SCAN TO PAY
-                  </div>
-                  <div className="flex justify-between">
-                    <div className="w-5 h-5 bg-amber-400 border-2 border-white"></div>
-                    <div className="w-2 h-2 bg-emerald-400"></div>
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="flex-1 text-center sm:text-left space-y-2">
                 <div className="flex items-center justify-center sm:justify-start gap-1 text-xs text-slate-400">
                   <span>Pay via</span>
                   <span className="font-bold text-amber-400 uppercase">{currentMethod.name}</span>
+                  {paymentConfig.accountName && (
+                    <span className="text-[10px] text-slate-500 font-normal">({paymentConfig.accountName})</span>
+                  )}
                 </div>
                 <div className="bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-bold text-white truncate">{currentMethod.upiId}</span>
+                  <span className="font-mono text-xs font-bold text-white truncate">{activeUpiId}</span>
                   <button
                     type="button"
                     onClick={handleCopyUpi}
@@ -304,6 +399,19 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                 </p>
               </div>
             </div>
+
+            {/* Deposit Instructions Box if defined */}
+            {paymentConfig.instructions && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-200/90 font-mono space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                  <Info className="w-3.5 h-3.5 shrink-0" />
+                  <span>Deposit Instructions:</span>
+                </div>
+                <div className="whitespace-pre-line leading-relaxed pl-5 text-[10px] text-slate-300">
+                  {paymentConfig.instructions}
+                </div>
+              </div>
+            )}
 
             {/* Step 3: Payment Proof Inputs */}
             <div className="space-y-3">

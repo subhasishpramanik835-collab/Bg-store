@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, CheckCircle2, Building2, AlertCircle, ShieldCheck, ArrowRight, Wallet, Crown } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { VIP_TIERS } from '../utils/vip';
+import { logAnalyticsEvent } from '../utils/analytics';
 
 interface WithdrawModalProps {
   isOpen: boolean;
@@ -71,6 +72,12 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
     }
 
     soundFx.playCoin();
+    logAnalyticsEvent('withdrawal_submission', {
+      amount: parsedAmt,
+      fullName,
+      accountNumberEnd: accountNumber.slice(-4),
+      upiId
+    });
     onSubmitWithdrawal(parsedAmt, fullName, accountNumber, ifscCode, upiId);
     setShowSuccess(true);
   };

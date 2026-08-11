@@ -125,6 +125,19 @@
         "read": { "type": "boolean" }
       },
       "required": ["id", "userId", "title", "message", "type", "read"]
+    },
+    "AnalyticsEvent": {
+      "title": "AnalyticsEvent",
+      "description": "Interaction analytics event log",
+      "type": "object",
+      "properties": {
+        "event": { "type": "string", "maxLength": 100 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "number" },
+        "device": { "type": "string", "maxLength": 20 }
+      },
+      "required": ["event", "userId"]
     }
   },
   "firestore": {
@@ -155,6 +168,19 @@
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/NotificationItem" },
       "description": "User notifications"
+    },
+    "/analytics/{analyticsId}": {
+      "schema": { "$ref": "#/entities/AnalyticsEvent" },
+      "description": "User interaction analytics events"
+    },
+    "/supercar_config/{configId}": {
+      "description": "Super Car Draw module settings"
+    },
+    "/supercar_draws/{drawId}": {
+      "description": "Super Car Draw draw results and history"
+    },
+    "/payment_config/{configId}": {
+      "description": "Payment gateway config (UPI ID, QR code image, deposit limits, instructions)"
     }
   }
 }

@@ -35,7 +35,7 @@ export interface User {
 export interface WalletTransaction {
   id: string;
   userId: string;
-  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win';
+  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win' | 'ticket_win';
   amount: number;
   description: string;
   status: 'completed' | 'pending' | 'failed' | 'rejected';
@@ -96,14 +96,79 @@ export interface PurchasedTicket {
   userId: string;
   drawId: string;
   drawTitle: string;
-  ticketNumber: string; // e.g. "482910" or [4,8,2,9,1,0]
-  selectedNumbers: number[];
+  ticketNumber: string; // e.g. "482910" or [4,8,2,9,1,0] or "CAR-RED-8932"
+  selectedNumbers: (number | string)[];
   price: number;
   purchaseDate: string;
-  drawTime: number;
+  drawTime?: number | string;
+  drawDate?: string;
   status: TicketStatus;
   wonAmount?: number;
   matchCount?: number;
+  selectedCar?: 'red' | 'black' | 'yellow';
+  category?: string;
+}
+
+export type SuperCarColor = 'red' | 'black' | 'yellow';
+
+export interface SuperCarInfo {
+  id: SuperCarColor;
+  name: string;
+  tagline: string;
+  image: string;
+  accentColor: string;
+  glowColor: string;
+  badge: string;
+  topSpeed: string;
+  acceleration: string;
+}
+
+export interface SuperCarDrawIssue {
+  id: string; // e.g. "CAR-20260809-14"
+  issueId: string;
+  drawIndex?: number; // 1 to 28
+  startTime?: number;
+  endTime?: number;
+  drawTime?: string;
+  status: 'active' | 'shuffling' | 'completed' | 'closed';
+  winningCar?: SuperCarColor;
+  ticketPrice?: number;
+  prizeMultiplier?: number;
+  totalTicketsSold?: number;
+  totalBets?: {
+    red: number;
+    black: number;
+    yellow: number;
+  };
+  createdAt?: number;
+}
+
+export interface SuperCarConfig {
+  enabled: boolean;
+  ticketPrice: number;
+  prizeMultiplier: number;
+  resultMode: 'auto' | 'manual';
+  manualWinner?: SuperCarColor;
+  operatingStartHour: number; // 8 (08:00 AM)
+  operatingEndHour: number;   // 22 (10:00 PM)
+  drawIntervalMinutes: number; // 30
+  carImages?: {
+    red?: string;
+    black?: string;
+    yellow?: string;
+  };
+  carPrices?: {
+    red?: number;
+    black?: number;
+    yellow?: number;
+  };
+  carMultipliers?: {
+    red?: number;
+    black?: number;
+    yellow?: number;
+  };
+  lockedSlots?: number[]; // array of slot indices locked by admin
+  manualSlotWinners?: Record<number, SuperCarColor>; // manual winner per slot index 1..29
 }
 
 export interface NotificationItem {
@@ -128,4 +193,14 @@ export interface AdminStats {
   pendingWithdrawalsCount: number;
   totalRevenue: number;
   totalPayouts: number;
+}
+
+export interface PaymentConfig {
+  upiId: string;
+  qrCodeUrl: string;
+  accountName: string;
+  minDeposit: number;
+  maxDeposit: number;
+  instructions: string;
+  updatedAt?: string;
 }

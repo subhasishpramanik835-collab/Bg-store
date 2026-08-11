@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Wallet, ArrowDownLeft, ArrowUpRight, Ticket, Trophy, Gift, ShieldAlert,
   Search, Filter, CheckCircle2, Clock, AlertCircle, Copy, Check, ChevronRight,
@@ -7,6 +7,7 @@ import {
 import { WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
 import { VoucherGenerator } from './VoucherGenerator';
+import { PaginationBar } from './PaginationBar';
 
 interface WalletLedgerProps {
   transactions: WalletTransaction[];
@@ -25,6 +26,15 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [selectedTx, setSelectedTx] = useState<WalletTransaction | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter, statusFilter]);
 
   // Copy helper
   const handleCopy = (text: string, id: string) => {
@@ -534,7 +544,7 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
       </div>
 
       {/* Transactions Chronological List */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {filteredTransactions.length === 0 ? (
           <div className="text-center py-12 bg-slate-900/60 rounded-2xl border border-slate-800 space-y-3">
             <ShieldAlert className="w-10 h-10 text-slate-500 mx-auto" />
@@ -542,62 +552,80 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
             <p className="text-xs text-slate-400">Try adjusting your search terms or filter selections.</p>
           </div>
         ) : (
-          filteredTransactions.map((tx) => {
-            const badgeInfo = getTypeBadge(tx.type);
-            const isPositive = isWinTx(tx);
+          <>
+            <div className="space-y-2">
+              {filteredTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((tx) => {
+                const badgeInfo = getTypeBadge(tx.type);
+                const isPositive = isWinTx(tx);
 
-            return (
-              <div
-                key={tx.id}
-                onClick={() => { soundFx.playClick(); setSelectedTx(tx); }}
-                className="group p-4 bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all cursor-pointer shadow-md hover:shadow-lg hover:shadow-amber-500/5"
-              >
-                
-                {/* Left Section: Icon & Info */}
-                <div className="flex items-center gap-3">
-                  
-                  {/* Category Type Icon Container */}
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${badgeInfo.bgColor}`}>
-                    {badgeInfo.icon}
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-mono font-black text-amber-400 tracking-wide">{tx.id}</span>
-                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${badgeInfo.bgColor}`}>
-                        {badgeInfo.label}
-                      </span>
-                    </div>
-
-                    <p className="text-xs font-bold text-white font-mono line-clamp-1">{tx.description}</p>
+                return (
+                  <div
+                    key={tx.id}
+                    onClick={() => { soundFx.playClick(); setSelectedTx(tx); }}
+                    className="group p-4 bg-slate-900/90 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all cursor-pointer shadow-md hover:shadow-lg hover:shadow-amber-500/5"
+                  >
                     
-                    <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
-                      <span>{tx.date}</span>
-                      {tx.utr && <span className="text-slate-400">UTR: <strong className="text-amber-300/80">{tx.utr}</strong></span>}
+                    {/* Left Section: Icon & Info */}
+                    <div className="flex items-center gap-3">
+                      
+                      {/* Category Type Icon Container */}
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${badgeInfo.bgColor}`}>
+                        {badgeInfo.icon}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-mono font-black text-amber-400 tracking-wide">{tx.id}</span>
+                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${badgeInfo.bgColor}`}>
+                            {badgeInfo.label}
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-bold text-white font-mono line-clamp-1">{tx.description}</p>
+                        
+                        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
+                          <span>{tx.date}</span>
+                          {tx.utr && <span className="text-slate-400">UTR: <strong className="text-amber-300/80">{tx.utr}</strong></span>}
+                        </div>
+                      </div>
+
                     </div>
-                  </div>
 
-                </div>
+                    {/* Right Section: Amount & Signal Zoom Animation Badge */}
+                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800/80 shrink-0">
+                      
+                      <div className="text-left sm:text-right">
+                        <div className={`text-base font-black font-mono tracking-tight ${
+                          isPositive ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {isPositive ? `+₹${Math.abs(tx.amount).toLocaleString('en-IN')}` : `-₹${Math.abs(tx.amount).toLocaleString('en-IN')}`}
+                        </div>
+                        <div className="mt-1">{getOutcomeBadge(tx)}</div>
+                      </div>
 
-                {/* Right Section: Amount & Signal Zoom Animation Badge */}
-                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800/80 shrink-0">
-                  
-                  <div className="text-left sm:text-right">
-                    <div className={`text-base font-black font-mono tracking-tight ${
-                      isPositive ? 'text-emerald-400' : 'text-rose-400'
-                    }`}>
-                      {isPositive ? `+₹${Math.abs(tx.amount).toLocaleString('en-IN')}` : `-₹${Math.abs(tx.amount).toLocaleString('en-IN')}`}
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all hidden sm:block" />
+
                     </div>
-                    <div className="mt-1">{getOutcomeBadge(tx)}</div>
+
                   </div>
+                );
+              })}
+            </div>
 
-                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all hidden sm:block" />
-
-                </div>
-
-              </div>
-            );
-          })
+            <PaginationBar
+              currentPage={currentPage}
+              totalPages={Math.ceil(filteredTransactions.length / pageSize) || 1}
+              pageSize={pageSize}
+              totalItems={filteredTransactions.length}
+              onPageChange={(page) => setCurrentPage(page)}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[10, 20, 50, 100]}
+              label="transactions"
+            />
+          </>
         )}
       </div>
 

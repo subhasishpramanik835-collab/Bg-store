@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { AdminSuperCarManager } from './AdminSuperCarManager';
+import { AdminPaymentManager } from './AdminPaymentManager';
+import { SuperCarDrawAnalytics } from './SuperCarDrawAnalytics';
+import { AdminBroadcastManager } from './AdminBroadcastManager';
+import { AdminSmtpManager } from './AdminSmtpManager';
+import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
   deposits: DepositRequest[];
@@ -62,8 +68,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'payment' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp'>('overview');
+  const [supercarConfig, setSupercarConfig] = useState<any>({
+    enabled: true,
+    ticketPrice: 100,
+    prizeMultiplier: 2.8,
+    resultMode: 'auto',
+    manualWinner: 'red'
+  });
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'supercar_config', 'main'), (snap) => {
+      if (snap.exists()) {
+        setSupercarConfig(snap.data());
+      }
+    }, (err) => console.warn('Supercar config snapshot error:', err.message));
+    return () => unsub();
+  }, []);
+
+  const handleUpdateSupercarConfig = async (newFields: Partial<any>) => {
+    try {
+      const updated = { ...supercarConfig, ...newFields };
+      setSupercarConfig(updated);
+      await setDoc(doc(db, 'supercar_config', 'main'), updated, { merge: true });
+      soundFx.playCoin();
+    } catch (err) {
+      console.error('Error saving supercar config:', err);
+    }
+  };
   const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+
+  // Pagination states for admin tables
+  const [depPage, setDepPage] = useState<number>(1);
+  const [depPageSize, setDepPageSize] = useState<number>(10);
+
+  const [wthPage, setWthPage] = useState<number>(1);
+  const [wthPageSize, setWthPageSize] = useState<number>(10);
+
+  const [ticketPage, setTicketPage] = useState<number>(1);
+  const [ticketPageSize, setTicketPageSize] = useState<number>(10);
+
+  const [userPage, setUserPage] = useState<number>(1);
+  const [userPageSize, setUserPageSize] = useState<number>(10);
 
   const copyUserIdToClipboard = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -417,6 +463,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'payment', label: 'Payment Settings', icon: QrCode },
+            { id: 'supercar', label: 'Super Car Draw', icon: Sparkles },
+            { id: 'supercar_analytics', label: 'Draw Analytics', icon: TrendingUp },
+            { id: 'broadcast', label: 'Broadcast Center', icon: Bell },
+            { id: 'smtp', label: 'Gmail SMTP', icon: Mail },
             { id: 'deposits', label: 'Deposits', count: pendingDepositsCount, icon: ArrowDownCircle },
             { id: 'withdrawals', label: 'Withdrawals', count: pendingWithdrawalsCount, icon: ArrowUpCircle },
             { id: 'draws', label: 'Draw Winners', icon: Trophy },
@@ -483,6 +534,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-1 font-mono">
                 {[
                   { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'broadcast', label: 'Broadcast & Notification Center', icon: Bell, desc: 'Multi-channel push & newsletters' },
+                  { id: 'smtp', label: 'Gmail SMTP Management', icon: Mail, desc: 'Configure OTP email credentials' },
                   { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle, desc: 'Verify user payment UTR slips' },
                   { id: 'withdrawals', label: 'Withdrawal Requests', count: pendingWithdrawalsCount, icon: ArrowUpCircle, desc: 'Approve user bank payouts' },
                   { id: 'draws', label: 'Draws & Winners', icon: Trophy, desc: 'Set live winning digits' },
@@ -812,67 +865,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 No deposit records match your search query or filters.
               </div>
             ) : (
-              filteredDeposits.map((dep) => (
-              <div
-                key={dep.id}
-                className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-white font-mono">{dep.id}</span>
-                    <span className="text-xs font-mono font-bold text-amber-400 uppercase">[{dep.method}]</span>
-                    <span className="text-xs text-slate-400">• {dep.date}</span>
-                  </div>
-                  <p className="text-xs text-slate-300 font-mono">
-                    User: <strong className="text-white">{dep.userName}</strong> ({dep.userId}) | Phone: {dep.userPhone}
-                  </p>
-                  <p className="text-xs text-amber-300 font-mono">
-                    UTR Number: <strong className="text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800">{dep.utr}</strong>
-                  </p>
-                </div>
+              <>
+                <div className="space-y-3">
+                  {filteredDeposits.slice((depPage - 1) * depPageSize, depPage * depPageSize).map((dep) => (
+                    <div
+                      key={dep.id}
+                      className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-white font-mono">{dep.id}</span>
+                          <span className="text-xs font-mono font-bold text-amber-400 uppercase">[{dep.method}]</span>
+                          <span className="text-xs text-slate-400">• {dep.date}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 font-mono">
+                          User: <strong className="text-white">{dep.userName}</strong> ({dep.userId}) | Phone: {dep.userPhone}
+                        </p>
+                        <p className="text-xs text-amber-300 font-mono">
+                          UTR Number: <strong className="text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800">{dep.utr}</strong>
+                        </p>
+                      </div>
 
-                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
-                  <div className="text-left lg:text-right">
-                    <span className="text-[10px] text-slate-400 uppercase block font-sans">Deposit Amount</span>
-                    <span className="text-lg font-black text-emerald-400 font-mono">₹{dep.amount.toLocaleString('en-IN')}</span>
-                  </div>
+                      <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
+                        <div className="text-left lg:text-right">
+                          <span className="text-[10px] text-slate-400 uppercase block font-sans">Deposit Amount</span>
+                          <span className="text-lg font-black text-emerald-400 font-mono">₹{dep.amount.toLocaleString('en-IN')}</span>
+                        </div>
 
-                  <button
-                    onClick={() => setSelectedScreenshot(dep.screenshotUrl)}
-                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>View Screenshot</span>
-                  </button>
+                        <button
+                          onClick={() => setSelectedScreenshot(dep.screenshotUrl)}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>View Screenshot</span>
+                        </button>
 
-                  {dep.status === 'pending' ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveDeposit(dep.id); }, 'Deposit Approval')}
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>APPROVE</span>
-                      </button>
+                        {dep.status === 'pending' ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveDeposit(dep.id); }, 'Deposit Approval')}
+                              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>APPROVE</span>
+                            </button>
 
-                      <button
-                        onClick={() => executeSensitiveAdminAction(() => onRejectDeposit(dep.id, 'Invalid UTR / Screenshot mismatch'), 'Deposit Rejection')}
-                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        <span>REJECT</span>
-                      </button>
+                            <button
+                              onClick={() => executeSensitiveAdminAction(() => onRejectDeposit(dep.id, 'Invalid UTR / Screenshot mismatch'), 'Deposit Rejection')}
+                              className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              <span>REJECT</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`text-xs font-mono font-bold uppercase px-3 py-1 rounded-full border ${
+                            dep.status === 'approved' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
+                          }`}>
+                            {dep.status}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <span className={`text-xs font-mono font-bold uppercase px-3 py-1 rounded-full border ${
-                      dep.status === 'approved' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
-                    }`}>
-                      {dep.status}
-                    </span>
-                  )}
+                  ))}
                 </div>
-              </div>
-            )))}
+
+                <PaginationBar
+                  currentPage={depPage}
+                  totalPages={Math.ceil(filteredDeposits.length / depPageSize) || 1}
+                  pageSize={depPageSize}
+                  totalItems={filteredDeposits.length}
+                  onPageChange={(page) => setDepPage(page)}
+                  onPageSizeChange={(size) => {
+                    setDepPageSize(size);
+                    setDepPage(1);
+                  }}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  label="deposit records"
+                />
+              </>
+            )}
           </div>
         </div>
       )}
@@ -941,58 +1013,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 No withdrawal records match your search query or filters.
               </div>
             ) : (
-              filteredWithdrawals.map((wth) => (
-              <div
-                key={wth.id}
-                className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-white font-mono">{wth.id}</span>
-                    <span className="text-xs text-slate-400">• {wth.date}</span>
-                  </div>
-                  <p className="text-xs text-slate-300 font-mono">
-                    User: <strong className="text-white">{wth.userName}</strong> ({wth.userId})
-                  </p>
-                  <p className="text-xs text-amber-300 font-mono">
-                    Account: <strong>{wth.fullName}</strong> | A/C: <strong>{wth.accountNumber}</strong> | IFSC: <strong>{wth.ifscCode}</strong> | UPI: <strong>{wth.upiId}</strong>
-                  </p>
-                </div>
+              <>
+                <div className="space-y-3">
+                  {filteredWithdrawals.slice((wthPage - 1) * wthPageSize, wthPage * wthPageSize).map((wth) => (
+                    <div
+                      key={wth.id}
+                      className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-white font-mono">{wth.id}</span>
+                          <span className="text-xs text-slate-400">• {wth.date}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 font-mono">
+                          User: <strong className="text-white">{wth.userName}</strong> ({wth.userId})
+                        </p>
+                        <p className="text-xs text-amber-300 font-mono">
+                          Account: <strong>{wth.fullName}</strong> | A/C: <strong>{wth.accountNumber}</strong> | IFSC: <strong>{wth.ifscCode}</strong> | UPI: <strong>{wth.upiId}</strong>
+                        </p>
+                      </div>
 
-                <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
-                  <div className="text-left lg:text-right">
-                    <span className="text-[10px] text-slate-400 uppercase block font-sans">Payout Amount</span>
-                    <span className="text-lg font-black text-rose-400 font-mono">₹{wth.amount.toLocaleString('en-IN')}</span>
-                  </div>
+                      <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
+                        <div className="text-left lg:text-right">
+                          <span className="text-[10px] text-slate-400 uppercase block font-sans">Payout Amount</span>
+                          <span className="text-lg font-black text-rose-400 font-mono">₹{wth.amount.toLocaleString('en-IN')}</span>
+                        </div>
 
-                  {wth.status === 'pending' ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveWithdrawal(wth.id); }, 'Withdrawal Approval')}
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>APPROVE PAYOUT</span>
-                      </button>
+                        {wth.status === 'pending' ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => executeSensitiveAdminAction(() => { soundFx.playCoin(); onApproveWithdrawal(wth.id); }, 'Withdrawal Approval')}
+                              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>APPROVE PAYOUT</span>
+                            </button>
 
-                      <button
-                        onClick={() => executeSensitiveAdminAction(() => onRejectWithdrawal(wth.id, 'Incorrect Bank / IFSC details'), 'Withdrawal Rejection')}
-                        className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        <span>REJECT</span>
-                      </button>
+                            <button
+                              onClick={() => executeSensitiveAdminAction(() => onRejectWithdrawal(wth.id, 'Incorrect Bank / IFSC details'), 'Withdrawal Rejection')}
+                              className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              <span>REJECT</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`text-xs font-mono font-bold uppercase px-3 py-1 rounded-full border ${
+                            wth.status === 'approved' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
+                          }`}>
+                            {wth.status}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <span className={`text-xs font-mono font-bold uppercase px-3 py-1 rounded-full border ${
-                      wth.status === 'approved' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
-                    }`}>
-                      {wth.status}
-                    </span>
-                  )}
+                  ))}
                 </div>
-              </div>
-            )))}
+
+                <PaginationBar
+                  currentPage={wthPage}
+                  totalPages={Math.ceil(filteredWithdrawals.length / wthPageSize) || 1}
+                  pageSize={wthPageSize}
+                  totalItems={filteredWithdrawals.length}
+                  onPageChange={(page) => setWthPage(page)}
+                  onPageSizeChange={(size) => {
+                    setWthPageSize(size);
+                    setWthPage(1);
+                  }}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  label="withdrawal records"
+                />
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1082,102 +1173,120 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 No tickets purchased by any players yet.
               </div>
             ) : (
-              tickets.map((t) => {
-                const playerObj = allUsers.find(u => u.id === t.userId);
-                const playerName = (t as any).userName || playerObj?.name || 'BETGURU Player';
-                const playerPhone = (t as any).userPhone || playerObj?.phone || 'N/A';
-                const selectedNums = (t.selectedNumbers || (t as any).numbers || []).join(', ');
-                const drawTitle = t.drawTitle || (t as any).drawName || 'Lottery Draw';
-                const pDate = t.purchaseDate || (t as any).date || 'Real-Time';
+              <>
+                <div className="space-y-3">
+                  {tickets.slice((ticketPage - 1) * ticketPageSize, ticketPage * ticketPageSize).map((t) => {
+                    const playerObj = allUsers.find(u => u.id === t.userId);
+                    const playerName = (t as any).userName || playerObj?.name || 'BETGURU Player';
+                    const playerPhone = (t as any).userPhone || playerObj?.phone || 'N/A';
+                    const selectedNums = (t.selectedNumbers || (t as any).numbers || []).join(', ');
+                    const drawTitle = t.drawTitle || (t as any).drawName || 'Lottery Draw';
+                    const pDate = t.purchaseDate || (t as any).date || 'Real-Time';
 
-                return (
-                  <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl transition-all">
-                    
-                    {/* Left: Player & Ticket details */}
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-black text-amber-400">{drawTitle}</span>
-                        <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                          TXN ID: {t.id}
-                        </span>
-                        <span className="text-[10px] text-slate-500">• {pDate}</span>
+                    return (
+                      <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl transition-all">
+                        
+                        {/* Left: Player & Ticket details */}
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-black text-amber-400">{drawTitle}</span>
+                            <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                              TXN ID: {t.id}
+                            </span>
+                            <span className="text-[10px] text-slate-500">• {pDate}</span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                            <span>Player Name: <strong className="text-white">{playerName}</strong></span>
+                            <span className="flex items-center gap-1 text-slate-400">
+                              User ID: <strong className="text-amber-300">{t.userId}</strong>
+                              <button
+                                onClick={() => copyUserIdToClipboard(t.userId)}
+                                className="p-1 hover:text-white transition-colors cursor-pointer"
+                                title="Copy User ID"
+                              >
+                                {copiedUserId === t.userId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                              </button>
+                            </span>
+                            <span>Phone: <strong className="text-slate-300">{playerPhone}</strong></span>
+                          </div>
+
+                          <div className="text-xs text-slate-300 flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800/80 w-fit">
+                            <span className="text-slate-400">Ticket Digits:</span>
+                            <span className="font-extrabold text-amber-300 tracking-wider bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/30">
+                              {selectedNums || 'None'}
+                            </span>
+                            <span className="text-slate-400 ml-2">Ticket Price:</span>
+                            <span className="font-black text-emerald-400">₹{t.price}</span>
+                          </div>
+                        </div>
+
+                        {/* Right: Status badge & Action buttons */}
+                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
+                          
+                          <div className="text-left lg:text-right">
+                            <span className="text-[10px] text-slate-500 uppercase block">Current Status</span>
+                            <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-full border ${
+                              t.status === 'win'
+                                ? 'bg-yellow-950 text-yellow-300 border-yellow-800'
+                                : t.status === 'rejected'
+                                ? 'bg-rose-950 text-rose-300 border-rose-800'
+                                : t.status === 'loss'
+                                ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                            }`}>
+                              {t.status || 'Active'}
+                            </span>
+                          </div>
+
+                          {/* Interactive Controls for Win, Loss, Reject */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'win', t.price, t.userId)}
+                              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>WIN</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'loss', t.price, t.userId)}
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all"
+                            >
+                              <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                              <span>LOSS</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'rejected', t.price, t.userId)}
+                              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-all"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>REJECT & REFUND</span>
+                            </button>
+                          </div>
+
+                        </div>
+
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
-                        <span>Player Name: <strong className="text-white">{playerName}</strong></span>
-                        <span className="flex items-center gap-1 text-slate-400">
-                          User ID: <strong className="text-amber-300">{t.userId}</strong>
-                          <button
-                            onClick={() => copyUserIdToClipboard(t.userId)}
-                            className="p-1 hover:text-white transition-colors cursor-pointer"
-                            title="Copy User ID"
-                          >
-                            {copiedUserId === t.userId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-                          </button>
-                        </span>
-                        <span>Phone: <strong className="text-slate-300">{playerPhone}</strong></span>
-                      </div>
-
-                      <div className="text-xs text-slate-300 flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800/80 w-fit">
-                        <span className="text-slate-400">Ticket Digits:</span>
-                        <span className="font-extrabold text-amber-300 tracking-wider bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/30">
-                          {selectedNums || 'None'}
-                        </span>
-                        <span className="text-slate-400 ml-2">Ticket Price:</span>
-                        <span className="font-black text-emerald-400">₹{t.price}</span>
-                      </div>
-                    </div>
-
-                    {/* Right: Status badge & Action buttons */}
-                    <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-800">
-                      
-                      <div className="text-left lg:text-right">
-                        <span className="text-[10px] text-slate-500 uppercase block">Current Status</span>
-                        <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-full border ${
-                          t.status === 'win'
-                            ? 'bg-yellow-950 text-yellow-300 border-yellow-800'
-                            : t.status === 'rejected'
-                            ? 'bg-rose-950 text-rose-300 border-rose-800'
-                            : t.status === 'loss'
-                            ? 'bg-slate-800 text-slate-400 border-slate-700'
-                            : 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                        }`}>
-                          {t.status || 'Active'}
-                        </span>
-                      </div>
-
-                      {/* Interactive Controls for Win, Loss, Reject */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'win', t.price, t.userId)}
-                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>WIN</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'loss', t.price, t.userId)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all"
-                        >
-                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
-                          <span>LOSS</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleUpdateTicketStatusInFirestore(t.id, 'rejected', t.price, t.userId)}
-                          className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-all"
-                        >
-                          <Ban className="w-3.5 h-3.5" />
-                          <span>REJECT & REFUND</span>
-                        </button>
-                      </div>
-
-                    </div>
-
-                  </div>
-                );
-              })
+                <PaginationBar
+                  currentPage={ticketPage}
+                  totalPages={Math.ceil(tickets.length / ticketPageSize) || 1}
+                  pageSize={ticketPageSize}
+                  totalItems={tickets.length}
+                  onPageChange={(page) => setTicketPage(page)}
+                  onPageSizeChange={(size) => {
+                    setTicketPageSize(size);
+                    setTicketPage(1);
+                  }}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  label="purchased tickets"
+                />
+              </>
             )}
           </div>
         </div>
@@ -1252,6 +1361,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     (u.referralCode && u.referralCode.toLowerCase().includes(term))
                   );
                 })
+                .slice((userPage - 1) * userPageSize, userPage * userPageSize)
                 .map((u) => {
                   const currentMainEdit = editingBalances[u.id] !== undefined ? editingBalances[u.id] : u.balance.toString();
                   const currentBonusEdit = editingBonusBalances[u.id] !== undefined ? editingBonusBalances[u.id] : (u.bonusBalance || 0).toString();
@@ -1471,6 +1581,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
               )}
+
+              <PaginationBar
+                currentPage={userPage}
+                totalPages={Math.ceil(
+                  allUsers.filter((u) => {
+                    const term = userSearchTerm.toLowerCase().trim();
+                    if (!term) return true;
+                    return (
+                      u.name.toLowerCase().includes(term) ||
+                      u.email.toLowerCase().includes(term) ||
+                      u.phone.toLowerCase().includes(term) ||
+                      u.id.toLowerCase().includes(term) ||
+                      (u.referralCode && u.referralCode.toLowerCase().includes(term))
+                    );
+                  }).length / userPageSize
+                ) || 1}
+                pageSize={userPageSize}
+                totalItems={
+                  allUsers.filter((u) => {
+                    const term = userSearchTerm.toLowerCase().trim();
+                    if (!term) return true;
+                    return (
+                      u.name.toLowerCase().includes(term) ||
+                      u.email.toLowerCase().includes(term) ||
+                      u.phone.toLowerCase().includes(term) ||
+                      u.id.toLowerCase().includes(term) ||
+                      (u.referralCode && u.referralCode.toLowerCase().includes(term))
+                    );
+                  }).length
+                }
+                onPageChange={(page) => setUserPage(page)}
+                onPageSizeChange={(size) => {
+                  setUserPageSize(size);
+                  setUserPage(1);
+                }}
+                pageSizeOptions={[10, 20, 50, 100]}
+                label="registered players"
+              />
             </div>
           )}
         </div>
@@ -1739,6 +1887,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB: PAYMENT SETTINGS MANAGER */}
+      {adminTab === 'payment' && (
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
+          <AdminPaymentManager />
+        </div>
+      )}
+
+      {/* TAB: SUPER CAR DRAW ANALYTICS */}
+      {adminTab === 'supercar_analytics' && (
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
+          <SuperCarDrawAnalytics tickets={tickets} />
+        </div>
+      )}
+
+      {/* TAB: THREE SUPER CAR DRAW ADMIN CONTROLS */}
+      {adminTab === 'supercar' && (
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
+          <AdminSuperCarManager config={supercarConfig} onUpdateConfig={handleUpdateSupercarConfig} />
+        </div>
+      )}
+
+      {/* TAB: BROADCAST & NOTIFICATION CENTER */}
+      {adminTab === 'broadcast' && (
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
+          <AdminBroadcastManager />
+        </div>
+      )}
+
+      {/* TAB: GMAIL SMTP MANAGEMENT */}
+      {adminTab === 'smtp' && (
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
+          <AdminSmtpManager />
         </div>
       )}
 

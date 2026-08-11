@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { User, WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
+import { logAnalyticsEvent } from '../utils/analytics';
 import confetti from 'canvas-confetti';
 
 interface LiveRouletteProps {
@@ -191,6 +192,7 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
     // If player placed bets, deduct total bet from wallet
     let currentBal = userBalanceRef.current;
     if (betTotal > 0) {
+      logAnalyticsEvent('game_start', { gameType: 'roulette', roundId, betTotal, betCount: currentPlacedBets.length }, user.id, user.email);
       currentBal = Math.max(0, currentBal - betTotal);
       onUpdateBalance(currentBal);
       onAddTransaction({
