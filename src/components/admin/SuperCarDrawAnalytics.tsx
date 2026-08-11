@@ -47,7 +47,7 @@ export const SuperCarDrawAnalytics: React.FC<SuperCarDrawAnalyticsProps> = ({ ti
 
   const filteredTickets = supercarTickets.filter((t) => {
     if (selectedSlotIndex !== 'all') {
-      const startMins = 8 * 60 + ((selectedSlotIndex as number) - 1) * 30;
+      const startMins = 8 * 60 + ((selectedSlotIndex as number) - 1) * 10;
       const h = Math.floor(startMins / 60);
       const m = startMins % 60;
       const ampm = h >= 12 ? 'PM' : 'AM';
@@ -124,10 +124,10 @@ export const SuperCarDrawAnalytics: React.FC<SuperCarDrawAnalyticsProps> = ({ ti
               onChange={(e) => setSelectedSlotIndex(e.target.value === 'all' ? 'all' : Number(e.target.value))}
               className="bg-slate-900 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl px-2 py-1 outline-none cursor-pointer"
             >
-              <option value="all">All 29 Daily Slots</option>
-              {Array.from({ length: 29 }, (_, i) => {
+              <option value="all">All 84 Daily Slots (10-Min)</option>
+              {Array.from({ length: 84 }, (_, i) => {
                 const slotNum = i + 1;
-                const startMins = 8 * 60 + i * 30;
+                const startMins = 8 * 60 + i * 10;
                 const h = Math.floor(startMins / 60);
                 const m = startMins % 60;
                 const ampm = h >= 12 ? 'PM' : 'AM';

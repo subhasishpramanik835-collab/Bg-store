@@ -426,6 +426,8 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
           onClose={() => setIsResultsOpen(false)}
           pastDraws={pastDraws}
           userTickets={userTickets}
+          config={config}
+          onBuyTicketClick={() => setSelectedBuyCar('red')}
         />
       )}
     </div>

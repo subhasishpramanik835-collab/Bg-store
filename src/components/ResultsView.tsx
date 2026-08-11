@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Award, Search, Trophy, Sparkles, Calendar, ArrowUpRight, Zap, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Award, Search, Trophy, Sparkles, Calendar, ArrowUpRight, Zap, ShieldCheck, Clock, Flame } from 'lucide-react';
 import { LotteryDraw, SuperCarDrawIssue, SuperCarConfig } from '../types';
-import { getSuperCarInfo } from '../utils/supercar';
+import { getSuperCarInfo, getSuperCarDailySlots, formatCountdown, sortSuperCarSlotsSmart, SuperCarSlotItem } from '../utils/supercar';
+import { soundFx } from '../utils/audio';
 
 interface ResultsViewProps {
   draws: LotteryDraw[];
@@ -18,6 +19,41 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'supercar' | 'lottery'>('supercar');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [slotFilter, setSlotFilter] = useState<'all' | 'completed' | 'active' | 'upcoming'>('all');
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const [y, m, d] = selectedDateStr.split('-').map(Number);
+  const targetDate = new Date(y, m - 1, d);
+  const dailySlots: SuperCarSlotItem[] = getSuperCarDailySlots(targetDate, supercarPastDraws, supercarConfig);
+
+  const filteredSlots = dailySlots.filter((slot) => {
+    if (slotFilter === 'completed' && slot.status !== 'completed') return false;
+    if (slotFilter === 'active' && slot.status !== 'active') return false;
+    if (slotFilter === 'upcoming' && slot.status !== 'upcoming') return false;
+
+    if (searchTerm.trim() !== '') {
+      const q = searchTerm.toLowerCase();
+      const matchDateStr = selectedDateStr.includes(q) || targetDate.toLocaleDateString('en-US').includes(q) || targetDate.toLocaleDateString('en-GB').includes(q);
+      return (
+        slot.slotLabel.toLowerCase().includes(q) ||
+        slot.timeLabel.toLowerCase().includes(q) ||
+        slot.issueId.toLowerCase().includes(q) ||
+        (slot.winningCar && slot.winningCar.toLowerCase().includes(q)) ||
+        matchDateStr
+      );
+    }
+    return true;
+  });
+
+  const sortedSlots = sortSuperCarSlotsSmart(filteredSlots);
 
   const sampleResults = [
     {
@@ -118,70 +154,167 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: SUPER CAR DRAW RESULTS */}
+      {/* TAB 1: SUPER CAR DRAW RESULTS (84 Daily 10-Min Slots) */}
       {activeTab === 'supercar' && (
-        <div className="space-y-3">
-          {filteredSupercars.length === 0 ? (
+        <div className="space-y-4">
+          
+          {/* Sub-Filters: Date & Status */}
+          <div className="p-3.5 bg-slate-900/90 border border-amber-500/30 rounded-3xl space-y-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white">Daily 84 Slots (08:00 AM – 10:00 PM)</span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setSelectedDateStr(new Date().toISOString().split('T')[0]);
+                  }}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    selectedDateStr === new Date().toISOString().split('T')[0]
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    const d = new Date();
+                    d.setDate(d.getDate() - 1);
+                    setSelectedDateStr(d.toISOString().split('T')[0]);
+                  }}
+                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer"
+                >
+                  Yesterday
+                </button>
+
+                <input
+                  type="date"
+                  value={selectedDateStr}
+                  onChange={(e) => {
+                    soundFx.playClick();
+                    setSelectedDateStr(e.target.value);
+                  }}
+                  className="bg-slate-950 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold rounded-xl px-3 py-1.5 outline-none cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 text-center">
+              {[
+                { id: 'all', label: 'All Slots' },
+                { id: 'completed', label: 'Completed' },
+                { id: 'active', label: 'Active Live' },
+                { id: 'upcoming', label: 'Upcoming' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSlotFilter(tab.id as any)}
+                  className={`py-1.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    slotFilter === tab.id
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {sortedSlots.length === 0 ? (
             <div className="p-8 bg-slate-900/80 border border-slate-800 rounded-3xl text-center space-y-3">
               <Zap className="w-10 h-10 text-amber-500 mx-auto animate-bounce" />
-              <h3 className="text-sm font-bold text-white uppercase">No Super Car Draw Results Found</h3>
+              <h3 className="text-sm font-bold text-white uppercase">No Super Car Slots Found</h3>
               <p className="text-xs text-slate-400">
-                When 30-minute daily supercar slots resolve or when admins publish results, they appear here instantly!
+                Adjust your filters or search term to view supercar draw slots.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {filteredSupercars.map((res) => {
-                const carInfo = getSuperCarInfo(res.winningCar, supercarConfig);
-                const multiplier = res.prizeMultiplier || supercarConfig?.prizeMultiplier || 2.8;
+              {sortedSlots.map((slot, index) => {
+                const isLatest = slot.status === 'completed' && (index === 0 || sortedSlots[index - 1]?.status === 'active');
+                const winningCarInfo = slot.winningCar ? getSuperCarInfo(slot.winningCar, supercarConfig) : null;
+                const multiplier = supercarConfig?.carMultipliers?.[slot.winningCar || 'black'] || supercarConfig?.prizeMultiplier || 2.8;
 
                 return (
                   <div
-                    key={res.issueId}
-                    className="p-4 bg-slate-900 border border-amber-500/30 hover:border-amber-400 rounded-3xl shadow-xl flex items-center justify-between gap-3 transition-all"
+                    key={slot.issueId}
+                    className={`p-4 rounded-3xl border transition-all shadow-xl space-y-3 ${
+                      slot.status === 'active'
+                        ? 'bg-slate-900 border-amber-400 shadow-amber-500/20 ring-1 ring-amber-400/40'
+                        : isLatest
+                        ? 'bg-slate-900 border-amber-500/50'
+                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-20 h-20 rounded-2xl overflow-hidden border border-slate-800 shrink-0">
-                        <img src={carInfo.image} alt={carInfo.name} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-transparent"></div>
-                        <span className={`absolute bottom-1 left-1 text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                          res.winningCar === 'red' ? 'bg-rose-500 text-white' : res.winningCar === 'black' ? 'bg-amber-500 text-slate-950' : 'bg-yellow-400 text-slate-950'
-                        }`}>
-                          {res.winningCar}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                          {slot.slotLabel}
                         </span>
+                        <span className="text-xs font-bold text-slate-300">{slot.timeLabel}</span>
                       </div>
 
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
-                            #{res.issueId}
-                          </span>
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-slate-500" />
-                            {res.drawTime || 'Completed'}
-                          </span>
-                        </div>
+                      {slot.status === 'active' ? (
+                        <span className="text-[10px] font-black bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 fill-slate-950" /> LIVE
+                        </span>
+                      ) : isLatest ? (
+                        <span className="text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-full uppercase">
+                          📌 LATEST RESULT
+                        </span>
+                      ) : slot.status === 'completed' ? (
+                        <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full uppercase">
+                          COMPLETED
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 px-2.5 py-0.5 rounded-full uppercase">
+                          UPCOMING
+                        </span>
+                      )}
+                    </div>
 
-                        <h3 className="text-sm font-black text-white uppercase tracking-tight">
-                          {carInfo.name} WINNER
-                        </h3>
-
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                          <span>Payout: <strong className="text-emerald-400">{multiplier}x</strong></span>
-                          <span>•</span>
-                          <span className="text-emerald-300 font-bold flex items-center gap-0.5">
-                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                            VERIFIED RESULT
-                          </span>
+                    {slot.status === 'active' && (
+                      <div className="p-3 bg-gradient-to-r from-amber-950/60 to-slate-950 border border-amber-500/40 rounded-2xl text-center space-y-1.5">
+                        <span className="text-[10px] font-bold text-amber-300 uppercase block tracking-wider">
+                          ACTIVE LIVE DRAW IN PROGRESS
+                        </span>
+                        <div className="text-sm font-black text-white flex items-center justify-center gap-1.5">
+                          <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                          <span>{formatCountdown(slot.timeRemainingMs)} remaining</span>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="p-2.5 bg-slate-950 rounded-2xl border border-slate-800 text-center shrink-0 min-w-[80px]">
-                      <Trophy className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                      <span className="text-[9px] text-slate-400 uppercase block font-bold">WINNER</span>
-                      <span className="text-xs font-black text-amber-300 uppercase">{res.winningCar}</span>
-                    </div>
+                    {slot.status === 'completed' && winningCarInfo && (
+                      <div className="flex items-center justify-between gap-3 p-2.5 bg-slate-950 rounded-2xl border border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <img src={winningCarInfo.image} alt={winningCarInfo.name} className="w-14 h-10 object-cover rounded-xl border border-slate-700" />
+                          <div>
+                            <span className="text-xs font-black text-white uppercase block">{winningCarInfo.name}</span>
+                            <span className="text-[10px] text-emerald-400 font-bold block">Winner • {multiplier}x Payout</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[9px] text-slate-400 block font-bold">PAYOUT</span>
+                          <span className="text-xs font-black text-amber-300">₹{(100 * multiplier).toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {slot.status === 'upcoming' && (
+                      <div className="p-2.5 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                        <span>Upcoming Slot #{slot.slotNum}</span>
+                        <span>Starts {slot.timeLabel}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}

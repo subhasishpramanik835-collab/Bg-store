@@ -70,7 +70,14 @@ export default function App() {
   // SuperCar States
   const [supercarConfig, setSupercarConfig] = useState<SuperCarConfig>(DEFAULT_SUPERCAR_CONFIG);
   const [supercarCurrentIssue, setSupercarCurrentIssue] = useState<SuperCarDrawIssue | null>(null);
-  const [supercarPastDraws, setSupercarPastDraws] = useState<SuperCarDrawIssue[]>([]);
+  const [supercarPastDraws, setSupercarPastDraws] = useState<SuperCarDrawIssue[]>(() => {
+    try {
+      const cached = localStorage.getItem('betguru_supercar_draws');
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
+      return [];
+    }
+  });
   const [superCarWinToast, setSuperCarWinToast] = useState<SuperCarWinToastData | null>(null);
   const notifiedWinTicketIdsRef = React.useRef<Set<string>>(new Set());
 
@@ -518,7 +525,7 @@ export default function App() {
       }
     }, (err) => console.warn('Supercar config listener notice:', err.message));
 
-    const qSuperCar = query(collection(db, 'supercar_draws'), limit(50));
+    const qSuperCar = query(collection(db, 'supercar_draws'), limit(1000));
     const unsubDraws = onSnapshot(qSuperCar, (snap) => {
       if (!snap.empty) {
         const list = snap.docs.map((d) => d.data() as SuperCarDrawIssue);
@@ -529,6 +536,9 @@ export default function App() {
           return (b.issueId || '').localeCompare(a.issueId || '');
         });
         setSupercarPastDraws(list);
+        try {
+          localStorage.setItem('betguru_supercar_draws', JSON.stringify(list));
+        } catch (_) {}
       } else {
         setSupercarPastDraws([]);
       }
@@ -556,17 +566,19 @@ export default function App() {
 
   // SuperCar Ticket Purchase Handler
   const handleConfirmSuperCarTicketBuy = async (carColor: SuperCarColor, quantity: number, totalCost: number) => {
-    logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost }, user.id, user.email);
+    const currentUserId = user?.id || 'anonymous';
+    const currentBalance = user?.balance || 0;
+    logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost }, currentUserId, user?.email);
 
-    if (user.balance < totalCost) {
-      alert(`Insufficient Wallet Balance! Required ₹${totalCost}, Available ₹${user.balance}. Please deposit funds.`);
+    if (currentBalance < totalCost) {
+      alert(`Insufficient Wallet Balance! Required ₹${totalCost}, Available ₹${currentBalance}. Please deposit funds.`);
       setIsDepositOpen(true);
       return;
     }
 
-    const newBal = user.balance - totalCost;
+    const newBal = currentBalance - totalCost;
     const earnedVipPts = Math.floor(totalCost / 10);
-    const updatedVipPts = user.vipPoints + earnedVipPts;
+    const updatedVipPts = (user?.vipPoints || 0) + earnedVipPts;
 
     setUser((prev) => ({
       ...prev,
@@ -582,7 +594,7 @@ export default function App() {
       const ticketNum = `CAR-${carColor.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
       const newTicket: PurchasedTicket = {
         id: `TKT-SC-${Date.now()}-${i}`,
-        userId: user.id,
+        userId: currentUserId,
         drawId: `SUPERCAR-${Date.now().toString().slice(-6)}`,
         drawTitle: `Super Car - ${carColor.toUpperCase()} CAR`,
         category: 'Three Super Car Draw',
@@ -602,7 +614,7 @@ export default function App() {
 
     const tx: WalletTransaction = {
       id: `TXN-SUPERCAR-${Date.now().toString().slice(-4)}`,
-      userId: user.id,
+      userId: currentUserId,
       type: 'ticket_buy',
       amount: -totalCost,
       description: `Purchased ${quantity}x ${carColor.toUpperCase()} Super Car Ticket(s) (+${earnedVipPts} VIP Pts)`,
@@ -760,19 +772,22 @@ export default function App() {
               if (isWin) {
                 // Auto add funds to user wallet
                 setUser((prev) => {
-                  const newBal = prev.balance + wonAmount;
-                  persistUserBalance(user.id, newBal);
+                  const currentBal = prev?.balance || 0;
+                  const newBal = currentBal + wonAmount;
+                  if (prev?.id) persistUserBalance(prev.id, newBal);
                   return {
                     ...prev,
                     balance: newBal,
-                    totalWon: prev.totalWon + wonAmount
+                    totalWon: (prev?.totalWon || 0) + wonAmount
                   };
                 });
+
+                const currentUserId = user?.id || 'anonymous';
 
                 // Add win transaction
                 const winTx: WalletTransaction = {
                   id: `TXN-WIN-${Date.now().toString().slice(-4)}`,
-                  userId: user.id,
+                  userId: currentUserId,
                   type: 'win_payout',
                   amount: wonAmount,
                   description: `Jackpot Win! ${draw.title}`,
@@ -785,7 +800,7 @@ export default function App() {
                 // Add notification
                 const winNtf: NotificationItem = {
                   id: `NTF-${Date.now()}`,
-                  userId: user.id,
+                  userId: currentUserId,
                   title: `🎉 JACKPOT WINNER! You Won ₹${wonAmount.toLocaleString('en-IN')}`,
                   message: `Your ticket for ${draw.title} matched all numbers (${winningDigits.join(' ')})!`,
                   type: 'win',
@@ -815,7 +830,7 @@ export default function App() {
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [draws, tickets, user.id]);
+  }, [draws, tickets, user?.id]);
 
   // Auto-dismiss non-critical informational notifications after 5 seconds
   useEffect(() => {

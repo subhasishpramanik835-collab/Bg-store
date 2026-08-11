@@ -87,6 +87,34 @@ export interface WithdrawalRequest {
   rejectReason?: string;
 }
 
+export interface LotteryScheduleSlot {
+  id: string; // e.g. "SCH-4D-20260811-01"
+  lotteryId: string; // e.g. "4d-express", "bumper-jackpot", "speed-1m", "supercar", "daily-mega"
+  lotteryTitle: string;
+  category: string; // '4D Express' | 'Bumper' | 'Speed 1m' | 'Daily Mega' | 'Three Super Card' | custom
+  slotName: string;
+  drawTimeLabel: string;
+  scheduledTimestamp: number; // Unix timestamp in ms
+  resultGridsCount: number; // Number of result grids/winning numbers (1 to 10)
+  winningResult?: (number | string)[]; // Pre-selected winning result by admin
+  prizePool: number;
+  ticketPrice: number;
+  status: 'scheduled' | 'active' | 'completed' | 'cancelled';
+  publishedAt?: string;
+  createdAt: string;
+  createdByAdmin: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  createdAt: number;
+}
+
 export interface LotteryDraw {
   id: string;
   title: string;
@@ -147,6 +175,9 @@ export interface SuperCarDrawIssue {
   drawTime?: string;
   status: 'active' | 'shuffling' | 'completed' | 'closed';
   winningCar?: SuperCarColor;
+  winnerTicket?: string;
+  winnerName?: string;
+  prizeText?: string;
   ticketPrice?: number;
   prizeMultiplier?: number;
   totalTicketsSold?: number;

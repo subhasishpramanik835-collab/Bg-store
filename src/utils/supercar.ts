@@ -65,7 +65,7 @@ export const DEFAULT_SUPERCAR_CONFIG: SuperCarConfig = {
   resultMode: 'auto',
   operatingStartHour: 8,  // 08:00 AM
   operatingEndHour: 22,   // 10:00 PM
-  drawIntervalMinutes: 30
+  drawIntervalMinutes: 10 // 10 minutes per draw slot
 };
 
 export interface DrawScheduleInfo {
@@ -79,18 +79,32 @@ export interface DrawScheduleInfo {
   nextOpenTime?: number;
 }
 
+export interface SuperCarSlotItem {
+  slotNum: number;
+  slotLabel: string;
+  timeLabel: string;
+  startTime: number;
+  endTime: number;
+  issueId: string;
+  status: 'completed' | 'active' | 'upcoming';
+  timeRemainingMs: number;
+  winningCar?: SuperCarColor;
+  matchedDraw?: SuperCarDrawIssue;
+}
+
 /**
- * Calculates current 30-minute draw schedule state based on operating hours (08:00 AM to 10:00 PM).
+ * Calculates current 10-minute draw schedule state based on operating hours (08:00 AM to 10:00 PM).
  */
 export function getCurrentSuperCarSchedule(config: SuperCarConfig = DEFAULT_SUPERCAR_CONFIG): DrawScheduleInfo {
+  const intervalMinutes = config.drawIntervalMinutes || 10;
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   const dateStr = `${year}${month}${day}`;
 
-  const startHour = config.operatingStartHour; // 8
-  const endHour = config.operatingEndHour;     // 22
+  const startHour = config.operatingStartHour ?? 8; // 8:00 AM
+  const endHour = config.operatingEndHour ?? 22;     // 10:00 PM
 
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, 0, 0, 0).getTime();
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endHour, 0, 0, 0).getTime();
@@ -104,7 +118,7 @@ export function getCurrentSuperCarSchedule(config: SuperCarConfig = DEFAULT_SUPE
       issueId: `CAR-${dateStr}-01`,
       drawIndex: 1,
       startTime: todayStart,
-      endTime: todayStart + config.drawIntervalMinutes * 60 * 1000,
+      endTime: todayStart + intervalMinutes * 60 * 1000,
       timeRemainingMs: todayStart - currentTime,
       isShuffling: false,
       nextOpenTime: todayStart
@@ -124,7 +138,7 @@ export function getCurrentSuperCarSchedule(config: SuperCarConfig = DEFAULT_SUPE
       issueId: `CAR-${tomY}${tomM}${tomD}-01`,
       drawIndex: 1,
       startTime: tomorrowStart,
-      endTime: tomorrowStart + config.drawIntervalMinutes * 60 * 1000,
+      endTime: tomorrowStart + intervalMinutes * 60 * 1000,
       timeRemainingMs: tomorrowStart - currentTime,
       isShuffling: false,
       nextOpenTime: tomorrowStart
@@ -133,8 +147,8 @@ export function getCurrentSuperCarSchedule(config: SuperCarConfig = DEFAULT_SUPE
 
   // Currently operating between 08:00 AM and 10:00 PM!
   const elapsedMsSinceStart = currentTime - todayStart;
-  const intervalMs = config.drawIntervalMinutes * 60 * 1000; // 30 mins = 1800000ms
-  const drawIndex = Math.floor(elapsedMsSinceStart / intervalMs) + 1; // 1 to 28
+  const intervalMs = intervalMinutes * 60 * 1000;
+  const drawIndex = Math.floor(elapsedMsSinceStart / intervalMs) + 1;
 
   const currentDrawStart = todayStart + (drawIndex - 1) * intervalMs;
   const currentDrawEnd = currentDrawStart + intervalMs;
@@ -155,6 +169,91 @@ export function getCurrentSuperCarSchedule(config: SuperCarConfig = DEFAULT_SUPE
 }
 
 /**
+ * Returns all daily 10-minute slots (8:00 AM to 10:00 PM, 84 slots total) for UI rendering
+ */
+export function getSuperCarDailySlots(
+  targetDate: Date = new Date(),
+  pastDraws: SuperCarDrawIssue[] = [],
+  config: SuperCarConfig = DEFAULT_SUPERCAR_CONFIG
+): SuperCarSlotItem[] {
+  const intervalMinutes = config.drawIntervalMinutes || 10;
+  const startHour = config.operatingStartHour ?? 8;
+  const endHour = config.operatingEndHour ?? 22;
+
+  const year = targetDate.getFullYear();
+  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const day = String(targetDate.getDate()).padStart(2, '0');
+  const dateStr = `${year}${month}${day}`;
+
+  const dayStart = new Date(year, targetDate.getMonth(), targetDate.getDate(), startHour, 0, 0, 0).getTime();
+  const totalMins = (endHour - startHour) * 60;
+  const totalSlotsCount = Math.floor(totalMins / intervalMinutes); // 84 slots for 14 hours at 10 mins each
+
+  const currentTime = Date.now();
+  const slots: SuperCarSlotItem[] = [];
+
+  for (let i = 0; i < totalSlotsCount; i++) {
+    const slotNum = i + 1;
+    const startTime = dayStart + i * intervalMinutes * 60 * 1000;
+    const endTime = startTime + intervalMinutes * 60 * 1000;
+    const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
+
+    // Format time label using target draw time (endTime) (e.g. 08:10 AM, 04:00 PM)
+    const slotDate = new Date(endTime);
+    const h = slotDate.getHours();
+    const m = slotDate.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const formattedH = h % 12 === 0 ? 12 : h % 12;
+    const timeLabel = `${String(formattedH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+
+    let status: 'completed' | 'active' | 'upcoming' = 'upcoming';
+    let timeRemainingMs = 0;
+
+    if (currentTime >= endTime) {
+      status = 'completed';
+    } else if (currentTime >= startTime && currentTime < endTime) {
+      status = 'active';
+      timeRemainingMs = Math.max(0, endTime - currentTime);
+    } else {
+      status = 'upcoming';
+      timeRemainingMs = Math.max(0, startTime - currentTime);
+    }
+
+    // Match past draw or manual override winner specifically for THIS issueId / dateStr
+    const matchedDraw = pastDraws.find((d) => {
+      if (!d) return false;
+      if (d.issueId === issueId || d.id === issueId) return true;
+      if (d.issueId && d.issueId.includes(dateStr) && (d.drawIndex === slotNum || d.issueId.endsWith(`-${String(slotNum).padStart(2, '0')}`))) return true;
+      return false;
+    });
+
+    // Check manual override slot winner if set in config for issueId or slotNum
+    const manualSlotWinner = config.manualSlotWinners?.[issueId] || config.manualSlotWinners?.[slotNum];
+    
+    // Auto deterministic color if not manually set in auto mode
+    const autoColors: SuperCarColor[] = ['red', 'black', 'yellow'];
+    const autoColor = autoColors[(slotNum * 7 + Number(dateStr)) % 3];
+
+    const winningCar = matchedDraw?.winningCar || manualSlotWinner || (status === 'completed' && config.resultMode !== 'manual' ? autoColor : undefined);
+
+    slots.push({
+      slotNum,
+      slotLabel: `SLOT #${String(slotNum).padStart(2, '0')}`,
+      timeLabel,
+      startTime,
+      endTime,
+      issueId,
+      status,
+      timeRemainingMs,
+      winningCar,
+      matchedDraw
+    });
+  }
+
+  return slots;
+}
+
+/**
  * Format milliseconds into MM:SS display
  */
 export function formatCountdown(ms: number): string {
@@ -163,4 +262,18 @@ export function formatCountdown(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/**
+ * Smart sorts slots for optimal UI rendering:
+ * 1. Active live draw first at top
+ * 2. Completed draws next, newest completed first (descending slotNum)
+ * 3. Upcoming draws last (ascending slotNum)
+ */
+export function sortSuperCarSlotsSmart(slots: SuperCarSlotItem[]): SuperCarSlotItem[] {
+  const active = slots.filter((s) => s.status === 'active');
+  const completed = slots.filter((s) => s.status === 'completed').sort((a, b) => b.slotNum - a.slotNum);
+  const upcoming = slots.filter((s) => s.status === 'upcoming').sort((a, b) => a.slotNum - b.slotNum);
+
+  return [...active, ...completed, ...upcoming];
 }

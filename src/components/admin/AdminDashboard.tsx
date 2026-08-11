@@ -10,6 +10,7 @@ import { AdminPaymentManager } from './AdminPaymentManager';
 import { SuperCarDrawAnalytics } from './SuperCarDrawAnalytics';
 import { AdminBroadcastManager } from './AdminBroadcastManager';
 import { AdminSmtpManager } from './AdminSmtpManager';
+import { AdminSchedulerManager } from './AdminSchedulerManager';
 import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
@@ -68,7 +69,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'payment' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp'>('overview');
   const [supercarConfig, setSupercarConfig] = useState<any>({
     enabled: true,
     ticketPrice: 100,
@@ -466,6 +467,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
             { id: 'payment', label: 'Payment Settings', icon: QrCode },
             { id: 'supercar', label: 'Super Car Draw', icon: Sparkles },
             { id: 'supercar_analytics', label: 'Draw Analytics', icon: TrendingUp },
@@ -537,6 +539,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-1 font-mono">
                 {[
                   { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'scheduler', label: 'Universal Lottery Scheduler', icon: Clock, desc: 'Auto draw slots, timers & preset winners' },
                   { id: 'broadcast', label: 'Broadcast & Notification Center', icon: Bell, desc: 'Multi-channel push & newsletters' },
                   { id: 'smtp', label: 'Gmail SMTP Management', icon: Mail, desc: 'Configure OTP email credentials' },
                   { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle, desc: 'Verify user payment UTR slips' },
@@ -863,6 +866,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* UNIVERSAL LOTTERY RESULT SCHEDULER */}
+      {adminTab === 'scheduler' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminSchedulerManager currentUser={user} />
         </div>
       )}
 

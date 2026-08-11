@@ -3,7 +3,7 @@ import {
   Upload, Trash2, Image as ImageIcon, CheckCircle, AlertCircle, Loader2, RefreshCw,
   Lock, DollarSign, Sparkles, TrendingUp, CheckCircle2, XCircle, Search,
   Filter, Grid, Table as TableIcon, Users, Clock, Award, ShieldAlert, ArrowUpRight, RotateCcw,
-  Activity, PieChart as PieChartIcon, BarChart2, Trophy
+  Activity, PieChart as PieChartIcon, BarChart2, Trophy, Edit, Zap, Flame, Calendar
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
@@ -38,9 +38,101 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
   const [selectedMonitorSlot, setSelectedMonitorSlot] = useState<number | 'all'>('all');
 
   // Sub-Tab 2 (Daily Draws Results) State
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [adminSelectedDateStr, setAdminSelectedDateStr] = useState<string>(todayStr);
   const [drawsSearchTerm, setDrawsSearchTerm] = useState<string>('');
-  const [drawsViewMode, setDrawsViewMode] = useState<'grid' | 'table'>('grid');
-  const [drawsFilterStatus, setDrawsFilterStatus] = useState<'all' | 'completed' | 'active'>('all');
+  const [drawsViewMode, setDrawsViewMode] = useState<'grid' | 'table'>('table');
+  const [drawsFilterStatus, setDrawsFilterStatus] = useState<'all' | 'completed' | 'active' | 'upcoming'>('all');
+  const [gameCategoryTab, setGameCategoryTab] = useState<'daily' | 'supercar'>('supercar');
+
+  // Helper for admin target date string formatting
+  const getAdminDateStr = () => {
+    const [y, m, d] = (adminSelectedDateStr || todayStr).split('-').map(Number);
+    return `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
+  };
+
+  // Edit Result Modal State
+  const [editingSlotModal, setEditingSlotModal] = useState<number | null>(null);
+  const [editWinningCar, setEditWinningCar] = useState<SuperCarColor>('red');
+  const [editWinnerTicket, setEditWinnerTicket] = useState<string>('');
+  const [editWinnerName, setEditWinnerName] = useState<string>('');
+  const [editPrizeAmount, setEditPrizeAmount] = useState<string>('₹50,000');
+
+  const openEditResultModal = (slotNum: number) => {
+    soundFx.playClick();
+    const timeLabel = getSlotTimeLabel(slotNum);
+    const dateStr = getAdminDateStr();
+    const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
+    const drawData = drawsMap[issueId];
+    const currentWinner = drawData?.winningCar || config.manualSlotWinners?.[issueId] || config.manualSlotWinners?.[slotNum] || 'red';
+
+    setEditingSlotModal(slotNum);
+    setEditWinningCar(currentWinner);
+    setEditWinnerTicket(drawData?.winnerTicket || `TCK-${Math.floor(100000 + Math.random() * 900000)}`);
+    setEditWinnerName(drawData?.winnerName || `Winner (Slot #${slotNum})`);
+    setEditPrizeAmount(drawData?.prizeText || (slotNum % 3 === 0 ? '₹1,00,00,000' : '₹50,000'));
+  };
+
+  const handleSaveEditResultModal = async () => {
+    if (!editingSlotModal) return;
+    soundFx.playWinFanfare();
+    const slotNum = editingSlotModal;
+    const timeLabel = getSlotTimeLabel(slotNum);
+    const dateStr = getAdminDateStr();
+    const [y, m, d] = (adminSelectedDateStr || todayStr).split('-').map(Number);
+    const formattedDateLabel = new Date(y, m - 1, d).toLocaleDateString('en-IN');
+    const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
+
+    const drawIssueDoc = {
+      id: issueId,
+      issueId,
+      drawIndex: slotNum,
+      drawTime: `${formattedDateLabel} ${timeLabel}`,
+      winningCar: editWinningCar,
+      status: 'completed',
+      prizeMultiplier: config.carMultipliers?.[editWinningCar] || config.prizeMultiplier || 2.8,
+      winnerTicket: editWinnerTicket.trim() || `TCK-${Math.floor(100000 + Math.random() * 900000)}`,
+      winnerName: editWinnerName.trim() || `Winner (Slot #${slotNum})`,
+      prizeText: editPrizeAmount.trim() || '₹50,000',
+      createdAt: new Date().toISOString(),
+      declaredAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'supercar_draws', issueId), drawIssueDoc, { merge: true });
+
+      // Save to config.manualSlotWinners for instant real-time sync
+      const newManualWinners = { ...(config.manualSlotWinners || {}), [slotNum]: editWinningCar, [issueId]: editWinningCar };
+      await onUpdateConfig({ manualSlotWinners: newManualWinners });
+
+      // Settle tickets for this slot automatically
+      const slotTickets = supercarTickets.filter(
+        (t) => t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(slotNum).padStart(2, '0')}`)
+      );
+
+      const multiplier = config.carMultipliers?.[editWinningCar] || config.prizeMultiplier || 2.8;
+      for (const t of slotTickets) {
+        if (t.status === 'active' || t.status === 'pending') {
+          const userCarChoice = (t.selectedCar || t.selectedNumbers?.[0] as string || 'red').toLowerCase() as SuperCarColor;
+          const isWin = userCarChoice === editWinningCar;
+          const wonAmt = isWin ? Math.round((t.price || 0) * multiplier) : 0;
+          await setDoc(doc(db, 'tickets', t.id), {
+            status: isWin ? 'win' : 'loss',
+            wonAmount: wonAmt,
+            settledAt: new Date().toISOString()
+          }, { merge: true });
+        }
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: `Result saved for Slot #${slotNum} (${timeLabel}) -> ${editWinningCar.toUpperCase()} CAR! Syncing automatically to all user screens.`
+      });
+      setEditingSlotModal(null);
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: `Failed to save slot result: ${err.message}` });
+    }
+  };
 
   // Sub-Tab 3 (User Ticket Audit) State
   const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('');
@@ -95,9 +187,9 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
     (t) => t.category === 'Three Super Car Draw' || t.drawTitle?.includes('Super Car')
   );
 
-  // Format slot time helper (1 to 29 slots: 08:00 AM to 10:00 PM)
+  // Format slot time helper (1 to 84 slots: 08:00 AM to 10:00 PM)
   const getSlotTimeLabel = (slotNum: number) => {
-    const startMins = 8 * 60 + (slotNum - 1) * 30;
+    const startMins = 8 * 60 + (slotNum - 1) * 10;
     const h = Math.floor(startMins / 60);
     const m = startMins % 60;
     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -440,7 +532,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Live Sales Recharts Monitor • 29 Daily Slot Winner Reveals • User Ticket Payout Audit • HD Image Uploads
+              Live Sales Recharts Monitor • 84 Daily Slot Winner Reveals • User Ticket Payout Audit • HD Image Uploads
             </p>
           </div>
         </div>
@@ -467,7 +559,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
       <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 overflow-x-auto">
         {[
           { id: 'monitor', label: '📊 Live Sales Monitor (Recharts)', icon: TrendingUp },
-          { id: 'draws', label: '🏆 Daily Draw Results (29 Slots)', icon: Lock },
+          { id: 'draws', label: '🏆 Daily Draw Results (84 Slots)', icon: Lock },
           { id: 'tickets', label: '👤 User Ticket Audit & Settlement', icon: Users },
           { id: 'images', label: '⚙️ HD Car Images & Pricing Config', icon: ImageIcon }
         ].map((tab) => {
@@ -533,8 +625,8 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                 onChange={(e) => setSelectedMonitorSlot(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                 className="bg-slate-950 border border-slate-700 text-amber-300 font-black text-xs rounded-xl px-3 py-2 outline-none cursor-pointer"
               >
-                <option value="all">All 29 Daily Slots</option>
-                {Array.from({ length: 29 }, (_, i) => {
+                <option value="all">All 84 Daily Slots (10-Min)</option>
+                {Array.from({ length: 84 }, (_, i) => {
                   const sNum = i + 1;
                   return (
                     <option key={sNum} value={sNum}>
@@ -554,7 +646,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                 {selectedMonitorSlot === 'all' ? '08:00 AM - 10:00 PM' : getSlotTimeLabel(selectedMonitorSlot as number)}
               </span>
               <span className="text-[10px] text-amber-400 block mt-0.5">
-                {selectedMonitorSlot === 'all' ? '29 Daily Slots' : `Slot #${String(selectedMonitorSlot).padStart(2, '0')}`}
+                {selectedMonitorSlot === 'all' ? '84 Daily Slots' : `Slot #${String(selectedMonitorSlot).padStart(2, '0')}`}
               </span>
             </div>
 
@@ -647,222 +739,514 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
       )}
 
       {/* =========================================================
-          SUB-TAB 2: 🏆 3 SUPER CAR DAILY DRAW RESULTS (29 SLOTS)
+          SUB-TAB 2: 🏆 3 SUPER CAR DAILY DRAW RESULTS (84 SLOTS)
          ========================================================= */}
       {activeSubTab === 'draws' && (
-        <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="space-y-5 animate-in fade-in duration-200 font-mono">
           
-          {/* Header & Controls */}
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-4 bg-slate-900 border border-slate-800 rounded-3xl">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-white flex items-center gap-2">
-                  <Trophy className="w-5 h-5 text-amber-400" />
-                  <span>3 Super Car Daily Draw Results</span>
-                </h3>
-                <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
-                  🕒 29 DAILY SLOTS (08:00 AM - 10:00 PM)
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">Real-time slot results, winner history, and ticket entries for all 29 daily draws.</p>
-            </div>
-
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1 md:w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search Slot # (1-29), Time, or RED/BLACK/YELLOW..."
-                  value={drawsSearchTerm}
-                  onChange={(e) => setDrawsSearchTerm(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl pl-9 pr-3 py-2 outline-none focus:border-amber-500/50"
-                />
+          {/* 1. DRAW EXECUTION MODE CARD (Matching Screenshot 1) */}
+          <div className="p-4 bg-slate-900 border border-slate-800 rounded-3xl space-y-3 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs sm:text-sm font-black text-white">Draw Execution Mode:</span>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border uppercase ${
+                    (config.resultMode || 'auto') === 'auto'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                  }`}>
+                    {(config.resultMode || 'auto') === 'auto' ? '⚡ AUTOMATIC TIMELY 10-MIN' : '✋ MANUAL DRAW'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-sans mt-1">
+                  Results automatically roll over and display on schedule every 10 minutes from 08:00 AM to 10:00 PM.
+                </p>
               </div>
 
-              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 shrink-0">
                 <button
-                  onClick={() => setDrawsViewMode('grid')}
-                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${drawsViewMode === 'grid' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}
-                  title="Grid View"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onUpdateConfig({ resultMode: 'auto' });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    (config.resultMode || 'auto') === 'auto'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  <Grid className="w-4 h-4" />
+                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  <span>Automatic</span>
                 </button>
+
                 <button
-                  onClick={() => setDrawsViewMode('table')}
-                  className={`p-1.5 rounded-lg text-xs font-bold transition-all ${drawsViewMode === 'table' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}
-                  title="Table View"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onUpdateConfig({ resultMode: 'manual' });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    config.resultMode === 'manual'
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  <TableIcon className="w-4 h-4" />
+                  <span>✋ Manual</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* 29 Slot Grid / Table */}
-          {drawsViewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {Array.from({ length: 29 }, (_, i) => {
-                const slotNum = i + 1;
-                const timeLabel = getSlotTimeLabel(slotNum);
+          {/* 1.5 CALENDAR DATE SELECTOR CARD FOR ADMIN HISTORICAL LOOKUP & OVERRIDES */}
+          <div className="p-3.5 bg-slate-900 border border-amber-500/30 rounded-3xl space-y-3 shadow-xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Find Results by Calendar Date</span>
+                  <span className="text-[10px] text-amber-400 font-bold">
+                    Selected Date: {adminSelectedDateStr}
+                  </span>
+                </div>
+              </div>
 
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const day = String(now.getDate()).padStart(2, '0');
-                const dateStr = `${year}${month}${day}`;
-                const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
-
-                const drawData = drawsMap[issueId];
-                const winningColor: SuperCarColor | undefined = drawData?.winningCar || config.manualSlotWinners?.[slotNum];
-                const isCompleted = Boolean(winningColor) || drawData?.status === 'completed';
-
-                // Slot Tickets
-                const slotTickets = supercarTickets.filter(
-                  (t) => t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(slotNum).padStart(2, '0')}`)
-                );
-
-                if (drawsSearchTerm.trim()) {
-                  const term = drawsSearchTerm.toLowerCase();
-                  const matchesTerm =
-                    `slot #${slotNum}`.includes(term) ||
-                    timeLabel.toLowerCase().includes(term) ||
-                    (winningColor && winningColor.includes(term));
-                  if (!matchesTerm) return null;
-                }
-
-                return (
-                  <div key={slotNum} className="p-4 bg-slate-900 border border-slate-800 rounded-3xl space-y-3 shadow-xl hover:border-amber-500/40 transition-all flex flex-col justify-between">
-                    <div>
-                      {/* Top Header */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-amber-400 font-mono">Slot #{String(slotNum).padStart(2, '0')}</span>
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                          isCompleted
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse'
-                        }`}>
-                          {isCompleted ? 'COMPLETED' : 'LIVE / OPEN'}
-                        </span>
-                      </div>
-
-                      {/* Time & Sync Health */}
-                      <div className="mt-2 space-y-0.5">
-                        <span className="text-lg font-black text-white block">{timeLabel}</span>
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                          <span>COUNTDOWN: {isCompleted ? 'COMPLETED' : 'ACTIVE'}</span>
-                          <span className="text-emerald-400 font-bold">+0ms Sync</span>
-                        </div>
-                      </div>
-
-                      {/* Result Box */}
-                      <div className="mt-3 p-3 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-1">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase block">WINNING RESULT</span>
-                        {winningColor ? (
-                          <span className={`text-xs font-black uppercase px-3 py-1 rounded-xl border block ${
-                            winningColor === 'red' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : winningColor === 'black' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
-                          }`}>
-                            🏆 REVEALED: {winningColor.toUpperCase()} CAR
-                          </span>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-500 block">PENDING RESULT REVEAL</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Controls */}
-                    <div className="space-y-2 pt-2 border-t border-slate-800">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>{slotTickets.length} tickets placed</span>
-                        <span className="text-amber-400 font-bold">Status: {isCompleted ? 'Closed' : 'Open'}</span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-1">
-                        <button
-                          onClick={() => handlePublishSlotWinner(slotNum, 'red')}
-                          className="py-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-[10px] font-black rounded-xl transition-all cursor-pointer"
-                        >
-                          RED
-                        </button>
-                        <button
-                          onClick={() => handlePublishSlotWinner(slotNum, 'black')}
-                          className="py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-black rounded-xl transition-all cursor-pointer"
-                        >
-                          BLACK
-                        </button>
-                        <button
-                          onClick={() => handlePublishSlotWinner(slotNum, 'yellow')}
-                          className="py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-300 text-[10px] font-black rounded-xl transition-all cursor-pointer"
-                        >
-                          YELLOW
-                        </button>
-                      </div>
-                    </div>
-
-                  </div>
-                );
-              })}
+              <span className="text-[10px] bg-amber-500/10 text-amber-300 px-2.5 py-1 rounded-xl border border-amber-500/20 font-bold hidden sm:inline-block">
+                84 Slots (08:00 AM - 10:00 PM)
+              </span>
             </div>
-          ) : (
-            /* Table View */
-            <div className="p-5 bg-slate-900 border border-slate-800 rounded-3xl space-y-3 overflow-x-auto">
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  setAdminSelectedDateStr(todayStr);
+                }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  adminSelectedDateStr === todayStr
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
+                    : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                }`}
+              >
+                Today
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  const d = new Date();
+                  d.setDate(d.getDate() - 1);
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  setAdminSelectedDateStr(`${y}-${m}-${day}`);
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer"
+              >
+                Yesterday
+              </button>
+
+              <div className="relative flex-1 min-w-[140px]">
+                <input
+                  type="date"
+                  value={adminSelectedDateStr}
+                  onChange={(e) => {
+                    soundFx.playClick();
+                    setAdminSelectedDateStr(e.target.value);
+                  }}
+                  className="w-full bg-slate-950 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold rounded-xl px-3 py-1.5 outline-none cursor-pointer focus:border-amber-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 2. GAME CATEGORY SWITCHER TABS (Matching Screenshot 1) */}
+          <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setGameCategoryTab('daily');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                gameCategoryTab === 'daily'
+                  ? 'bg-slate-800 text-amber-300 border border-amber-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🔥 1. Daily Win (84 Slots)</span>
+            </button>
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setGameCategoryTab('supercar');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                gameCategoryTab === 'supercar'
+                  ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🏎️ 2. 3 Super Car VIP</span>
+            </button>
+          </div>
+
+          {/* 3. FILTER PILLS (Matching Screenshot 1) */}
+          <div className="grid grid-cols-4 gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 text-center">
+            {[
+              { id: 'all', label: 'All Results' },
+              { id: 'completed', label: 'Completed' },
+              { id: 'active', label: 'Active Draw' },
+              { id: 'upcoming', label: 'Upcoming' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  soundFx.playClick();
+                  setDrawsFilterStatus(tab.id as any);
+                }}
+                className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                  drawsFilterStatus === tab.id
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 4. SEARCH BAR & VIEW SWITCHER */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 p-3 bg-slate-900 border border-slate-800 rounded-2xl">
+            <div className="relative flex-1 w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search slot # or number..."
+                value={drawsSearchTerm}
+                onChange={(e) => setDrawsSearchTerm(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl pl-9 pr-3 py-2 outline-none focus:border-amber-500/50 font-mono placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end">
+              <span className="text-[11px] text-slate-400 font-sans">View:</span>
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => setDrawsViewMode('table')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                    drawsViewMode === 'table' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Table View"
+                >
+                  <TableIcon className="w-3.5 h-3.5" />
+                  <span>Table</span>
+                </button>
+                <button
+                  onClick={() => setDrawsViewMode('grid')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                    drawsViewMode === 'grid' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Grid View"
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>Grid</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. DRAW RESULTS TABLE / GRID VIEW (Matching Screenshot 1 & 2) */}
+          {drawsViewMode === 'table' ? (
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-3xl overflow-x-auto shadow-2xl">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                    <th className="p-3">Slot #</th>
-                    <th className="p-3">Time Window</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Winning Result</th>
-                    <th className="p-3">Tickets Sold</th>
-                    <th className="p-3 text-right">Quick Declare Winner</th>
+                  <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                    <th className="p-3">SLOT / DRAW #</th>
+                    <th className="p-3">TIME / FREQUENCY</th>
+                    <th className="p-3">STATUS</th>
+                    <th className="p-3">WINNING SUPERCAR</th>
+                    <th className="p-3 text-right">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {Array.from({ length: 29 }, (_, i) => {
+                  {Array.from({ length: 84 }, (_, i) => {
                     const slotNum = i + 1;
                     const timeLabel = getSlotTimeLabel(slotNum);
-                    const now = new Date();
-                    const year = now.getFullYear();
-                    const month = String(now.getMonth() + 1).padStart(2, '0');
-                    const day = String(now.getDate()).padStart(2, '0');
-                    const dateStr = `${year}${month}${day}`;
+                    const dateStr = getAdminDateStr();
                     const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
                     const drawData = drawsMap[issueId];
-                    const winningColor: SuperCarColor | undefined = drawData?.winningCar || config.manualSlotWinners?.[slotNum];
-                    const isCompleted = Boolean(winningColor) || drawData?.status === 'completed';
 
-                    const slotTickets = supercarTickets.filter(
-                      (t) => t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(slotNum).padStart(2, '0')}`)
-                    );
+                    // Status determination relative to target date
+                    const [y, m, d] = (adminSelectedDateStr || todayStr).split('-').map(Number);
+                    const targetDateObj = new Date(y, m - 1, d);
+                    const todayObj = new Date();
+                    const isToday = targetDateObj.toDateString() === todayObj.toDateString();
+                    const isPastDay = targetDateObj < new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+
+                    const startMins = 8 * 60 + i * 10;
+                    const currentMins = todayObj.getHours() * 60 + todayObj.getMinutes();
+
+                    let slotStatus: 'completed' | 'active' | 'upcoming' = 'upcoming';
+                    if (isPastDay) {
+                      slotStatus = 'completed';
+                    } else if (isToday) {
+                      if (currentMins >= startMins + 10) slotStatus = 'completed';
+                      else if (currentMins >= startMins) slotStatus = 'active';
+                    }
+
+                    // Winning Car
+                    const winningColor: SuperCarColor | undefined = drawData?.winningCar || config.manualSlotWinners?.[issueId] || config.manualSlotWinners?.[slotNum];
+                    const isCompleted = slotStatus === 'completed' || Boolean(winningColor);
+
+                    // Filter Status
+                    if (drawsFilterStatus === 'completed' && !isCompleted) return null;
+                    if (drawsFilterStatus === 'active' && slotStatus !== 'active') return null;
+                    if (drawsFilterStatus === 'upcoming' && (isCompleted || slotStatus === 'active')) return null;
+
+                    // Filter Search
+                    if (drawsSearchTerm.trim()) {
+                      const query = drawsSearchTerm.toLowerCase();
+                      const matchSlot = `slot #${slotNum}`.includes(query) || String(slotNum).includes(query);
+                      const matchTime = timeLabel.toLowerCase().includes(query);
+                      const matchCar = winningColor ? winningColor.toLowerCase().includes(query) : false;
+                      const matchTicket = drawData?.winnerTicket ? drawData.winnerTicket.toLowerCase().includes(query) : false;
+                      if (!matchSlot && !matchTime && !matchCar && !matchTicket) return null;
+                    }
+
+                    const carInfo = winningColor ? getSuperCarInfo(winningColor, config) : null;
 
                     return (
-                      <tr key={slotNum} className="hover:bg-slate-950/50">
-                        <td className="p-3 font-black text-amber-400">Slot #{String(slotNum).padStart(2, '0')}</td>
-                        <td className="p-3 font-bold text-white">{timeLabel}</td>
+                      <tr key={slotNum} className="hover:bg-slate-950/60 transition-colors">
+                        {/* SLOT / DRAW # */}
+                        <td className="p-3 font-black text-amber-400">
+                          SLOT #{String(slotNum).padStart(2, '0')}
+                        </td>
+
+                        {/* TIME / FREQUENCY */}
+                        <td className="p-3 font-bold text-white">
+                          {timeLabel}
+                        </td>
+
+                        {/* STATUS */}
                         <td className="p-3">
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${isCompleted ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}`}>
-                            {isCompleted ? 'Completed' : 'Active'}
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                            isCompleted
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : slotStatus === 'active'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}>
+                            {isCompleted ? 'Completed' : slotStatus === 'active' ? 'Active' : 'Upcoming'}
                           </span>
                         </td>
+
+                        {/* WINNING SUPERCAR */}
                         <td className="p-3">
-                          {winningColor ? (
-                            <span className="font-black text-amber-300 uppercase">🏆 {winningColor} CAR</span>
+                          {winningColor && carInfo ? (
+                            <div className="flex items-center gap-2">
+                              <img src={carInfo.image} alt={carInfo.name} className="w-10 h-7 object-cover rounded-lg border border-slate-700 shrink-0" />
+                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-lg border ${
+                                winningColor === 'red'
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                  : winningColor === 'black'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                              }`}>
+                                {winningColor === 'red' ? 'RED SUPERCAR LUXURY' : winningColor === 'black' ? 'BLACK CARBON EDITION' : 'YELLOW LIGHTNING SUPERCAR'}
+                              </span>
+                            </div>
                           ) : (
-                            <span className="text-slate-500">Pending</span>
+                            <span className="text-slate-500 text-[11px]">Awaiting Draw</span>
                           )}
                         </td>
-                        <td className="p-3 font-bold text-white">{slotTickets.length} tickets</td>
+
+                        {/* ACTION -> EDIT RESULT BUTTON */}
                         <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => handlePublishSlotWinner(slotNum, 'red')} className="px-2 py-1 bg-rose-500/20 text-rose-300 rounded hover:bg-rose-500/30 text-[10px] font-bold">Red</button>
-                            <button onClick={() => handlePublishSlotWinner(slotNum, 'black')} className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 text-[10px] font-bold">Black</button>
-                            <button onClick={() => handlePublishSlotWinner(slotNum, 'yellow')} className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded hover:bg-yellow-500/30 text-[10px] font-bold">Yellow</button>
-                          </div>
+                          <button
+                            onClick={() => openEditResultModal(slotNum)}
+                            className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-black rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-md hover:scale-[1.02]"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            <span>Edit Result</span>
+                          </button>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+          ) : (
+            /* Grid View */
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 84 }, (_, i) => {
+                const slotNum = i + 1;
+                const timeLabel = getSlotTimeLabel(slotNum);
+                const dateStr = getAdminDateStr();
+                const issueId = `CAR-${dateStr}-${String(slotNum).padStart(2, '0')}`;
+                const drawData = drawsMap[issueId];
+
+                const winningColor: SuperCarColor | undefined = drawData?.winningCar || config.manualSlotWinners?.[issueId] || config.manualSlotWinners?.[slotNum];
+                const isCompleted = Boolean(winningColor) || drawData?.status === 'completed';
+                const carInfo = winningColor ? getSuperCarInfo(winningColor, config) : null;
+
+                if (drawsSearchTerm.trim()) {
+                  const query = drawsSearchTerm.toLowerCase();
+                  const matchSlot = `slot #${slotNum}`.includes(query) || String(slotNum).includes(query);
+                  const matchTime = timeLabel.toLowerCase().includes(query);
+                  if (!matchSlot && !matchTime) return null;
+                }
+
+                return (
+                  <div key={slotNum} className="p-4 bg-slate-900 border border-slate-800 rounded-3xl space-y-3 shadow-xl hover:border-amber-500/40 transition-all flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-amber-400">Slot #{String(slotNum).padStart(2, '0')}</span>
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                          isCompleted ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        }`}>
+                          {isCompleted ? 'COMPLETED' : 'LIVE / OPEN'}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 space-y-0.5">
+                        <span className="text-lg font-black text-white block">{timeLabel}</span>
+                      </div>
+
+                      <div className="mt-3 p-3 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-1">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase block">WINNING RESULT</span>
+                        {winningColor && carInfo ? (
+                          <div className="space-y-1">
+                            <img src={carInfo.image} alt={carInfo.name} className="w-16 h-10 object-cover rounded-xl mx-auto border border-slate-700" />
+                            <span className="text-xs font-black text-amber-300 block uppercase">{carInfo.name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-500 block">PENDING DRAW</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => openEditResultModal(slotNum)}
+                      className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Edit Result</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* EDIT RESULT MODAL */}
+          {editingSlotModal !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fade-in font-mono">
+              <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 max-w-md w-full space-y-4 shadow-2xl text-white">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-base font-black text-amber-400 flex items-center gap-2">
+                      <Edit className="w-5 h-5" />
+                      <span>Edit Result • Slot #{String(editingSlotModal).padStart(2, '0')}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 font-sans mt-0.5">
+                      Time Window: {getSlotTimeLabel(editingSlotModal)} (10-Min Draw)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setEditingSlotModal(null)}
+                    className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* SELECT WINNING CAR */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 block">Select Winning Super Car:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'red', label: 'RED LUXURY' },
+                      { id: 'black', label: 'BLACK STEALTH' },
+                      { id: 'yellow', label: 'YELLOW LIGHTNING' }
+                    ].map((car) => {
+                      const carInfo = getSuperCarInfo(car.id as SuperCarColor, config);
+                      const isSelected = editWinningCar === car.id;
+                      return (
+                        <button
+                          key={car.id}
+                          type="button"
+                          onClick={() => setEditWinningCar(car.id as SuperCarColor)}
+                          className={`p-2 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                            isSelected
+                              ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 scale-[1.02]'
+                              : 'bg-slate-950 border-slate-800 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={carInfo.image} alt={carInfo.name} className="w-12 h-9 object-cover rounded-xl" />
+                          <span className="text-[9px] font-black uppercase text-white">{car.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* WINNER DETAILS */}
+                <div className="space-y-3 pt-2 border-t border-slate-800">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 block mb-1">Winner Ticket ID:</label>
+                    <input
+                      type="text"
+                      value={editWinnerTicket}
+                      onChange={(e) => setEditWinnerTicket(e.target.value)}
+                      placeholder="e.g. TCK-100881"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold rounded-xl px-3 py-2 outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 block mb-1">Winner Display Name:</label>
+                    <input
+                      type="text"
+                      value={editWinnerName}
+                      onChange={(e) => setEditWinnerName(e.target.value)}
+                      placeholder="e.g. Winner (Slot #1)"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-white font-bold rounded-xl px-3 py-2 outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-400 block mb-1">Prize Amount / Display:</label>
+                    <input
+                      type="text"
+                      value={editPrizeAmount}
+                      onChange={(e) => setEditPrizeAmount(e.target.value)}
+                      placeholder="e.g. ₹50,000"
+                      className="w-full bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-mono font-bold rounded-xl px-3 py-2 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* MODAL ACTION BUTTONS */}
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSlotModal(null)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEditResultModal}
+                    className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    Save & Publish Result
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -943,8 +1327,8 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                 onChange={(e) => setTicketSlotFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                 className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none"
               >
-                <option value="all">All Slots (1 to 29)</option>
-                {Array.from({ length: 29 }, (_, i) => (
+                <option value="all">All Slots (1 to 84)</option>
+                {Array.from({ length: 84 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>Slot #{String(i + 1).padStart(2, '0')}</option>
                 ))}
               </select>
@@ -1247,13 +1631,13 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
                 <Lock className="w-4 h-4" />
-                <span>29 Daily Slots Manual Slot Locking Engine</span>
+                <span>84 Daily Slots Manual Slot Locking Engine</span>
               </h4>
               <span className="text-[10px] text-slate-400">Lock specific slots to prevent user bets</span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {Array.from({ length: 29 }, (_, i) => {
+              {Array.from({ length: 84 }, (_, i) => {
                 const slotNum = i + 1;
                 const timeLabel = getSlotTimeLabel(slotNum);
                 const lockedSlots = config.lockedSlots || [];
