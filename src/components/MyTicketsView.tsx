@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Ticket, Trophy, XCircle, Clock, Sparkles, Filter, CheckCircle2, Zap } from 'lucide-react';
 import { PurchasedTicket } from '../types';
-import { SUPER_CARS } from '../utils/supercar';
+import { SUPER_CARS, formatTicketExactDateTime, sortChronologicalNewestFirst } from '../utils/supercar';
 import { PaginationBar } from './PaginationBar';
 
 interface MyTicketsViewProps {
@@ -14,7 +14,9 @@ export const MyTicketsView: React.FC<MyTicketsViewProps> = ({ tickets, onOpenBuy
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  const filteredTickets = tickets.filter(t => {
+  const sortedTickets = sortChronologicalNewestFirst(tickets);
+
+  const filteredTickets = sortedTickets.filter(t => {
     if (filter === 'all') return true;
     if (filter === 'supercar') return t.category === 'Three Super Car Draw' || t.drawTitle.includes('Super Car');
     return t.status === filter;
@@ -95,18 +97,15 @@ export const MyTicketsView: React.FC<MyTicketsViewProps> = ({ tickets, onOpenBuy
                     : 'border-amber-500/30'
                 }`}
               >
-                {/* Top Row: Title & Status Badge */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-slate-400">{t.id}</span>
-                    {isSuperCarTicket && (
-                      <span className="text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Zap className="w-3 h-3 text-amber-400 fill-amber-400" /> Super Car
-                      </span>
-                    )}
+                {/* Glowing Animated Purchase Time Badge */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-amber-500/20 border border-amber-400 px-2.5 py-1 rounded-full text-amber-300 font-mono font-black text-[11px] shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin [animation-duration:3s]" />
+                    <span>TIME: {formatTicketExactDateTime(t)}</span>
                   </div>
+
                   <span
-                    className={`text-[10px] font-extrabold uppercase font-mono px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                    className={`text-[10px] font-extrabold uppercase font-mono px-2.5 py-1 rounded-full border flex items-center gap-1 shrink-0 ${
                       t.status === 'win'
                         ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                         : t.status === 'loss'
@@ -121,30 +120,47 @@ export const MyTicketsView: React.FC<MyTicketsViewProps> = ({ tickets, onOpenBuy
                   </span>
                 </div>
 
+                {/* Top Row: Title & Ticket ID */}
+                <div className="flex items-center justify-between mb-2 font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400">#{t.ticketNumber || t.id}</span>
+                    {isSuperCarTicket && (
+                      <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-400 fill-amber-400" /> Super Car
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Draw Title */}
-                <h3 className="text-base font-extrabold text-white font-mono mb-3">{t.drawTitle}</h3>
+                <h3 className="text-sm sm:text-base font-extrabold text-white font-mono mb-3">{t.drawTitle}</h3>
 
                 {/* Selected Digits OR Supercar Box */}
                 {carInfo ? (
-                  <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 mb-4 flex items-center justify-between">
+                  <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 mb-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={carInfo.image}
-                        alt={carInfo.name}
-                        className="w-14 h-9 object-cover rounded-lg border border-slate-700"
-                      />
+                      <div className="relative w-16 h-11 rounded-xl overflow-hidden border border-slate-700 shrink-0">
+                        <img
+                          src={carInfo.image}
+                          alt={carInfo.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
+                      </div>
                       <div>
                         <span className="text-xs font-black font-mono text-amber-300 block">
                           {carInfo.name}
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono block">
-                          Ticket #: {t.ticketNumber}
+                          Ticket Price: <strong className="text-emerald-400">₹{t.price}</strong>
                         </span>
                       </div>
                     </div>
-                    <div className="text-right font-mono">
-                      <span className="text-[10px] text-slate-400 block">Car Entry</span>
-                      <span className="text-xs font-black text-amber-400 uppercase">{t.selectedCar}</span>
+                    <div className="text-right font-mono shrink-0">
+                      <span className="text-[10px] text-slate-400 block font-bold">CAR CHOICE</span>
+                      <span className={`text-xs font-black uppercase px-2 py-0.5 rounded ${
+                        t.selectedCar === 'red' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : t.selectedCar === 'black' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                      }`}>{t.selectedCar} CAR</span>
                     </div>
                   </div>
                 ) : (
@@ -168,7 +184,7 @@ export const MyTicketsView: React.FC<MyTicketsViewProps> = ({ tickets, onOpenBuy
                 {/* Ticket Footer Meta */}
                 <div className="flex items-center justify-between text-xs font-mono pt-2 border-t border-slate-800 text-slate-400">
                   <div>
-                    <span className="text-[10px] block font-sans">Purchased</span>
+                    <span className="text-[10px] block font-sans">Purchased Date</span>
                     <span className="text-white font-bold">{t.purchaseDate}</span>
                   </div>
 

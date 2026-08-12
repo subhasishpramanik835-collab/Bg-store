@@ -55,6 +55,7 @@ export interface WalletTransaction {
   description: string;
   status: 'completed' | 'pending' | 'failed' | 'rejected';
   date: string;
+  createdAt?: string | number;
   utr?: string;
 }
 
@@ -68,6 +69,7 @@ export interface DepositRequest {
   utr: string;
   screenshotUrl: string;
   date: string;
+  createdAt?: string | number;
   status: TransactionStatus;
   rejectReason?: string;
 }
@@ -83,6 +85,7 @@ export interface WithdrawalRequest {
   ifscCode: string;
   upiId: string;
   date: string;
+  createdAt?: string | number;
   status: TransactionStatus;
   rejectReason?: string;
 }
@@ -143,6 +146,7 @@ export interface PurchasedTicket {
   selectedNumbers: (number | string)[];
   price: number;
   purchaseDate: string;
+  purchaseTime?: string;
   drawTime?: number | string;
   drawDate?: string;
   status: TicketStatus;
@@ -150,6 +154,8 @@ export interface PurchasedTicket {
   matchCount?: number;
   selectedCar?: 'red' | 'black' | 'yellow';
   category?: string;
+  createdAt?: string;
+  slotNum?: number;
 }
 
 export type SuperCarColor = 'red' | 'black' | 'yellow';

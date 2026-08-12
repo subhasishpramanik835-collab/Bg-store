@@ -202,7 +202,8 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
         amount: -betTotal,
         description: `Bets placed on Live Roulette Round #${roundId}`,
         status: 'completed',
-        date: new Date().toLocaleString('en-IN')
+        date: new Date().toLocaleString('en-IN'),
+        createdAt: new Date().toISOString()
       });
       setLastBets(currentPlacedBets);
     }
@@ -345,7 +346,8 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
               amount: totalWin,
               description: `Won ₹${totalWin} on Live Roulette Round #${roundId} (Number ${targetWinNum})`,
               status: 'completed',
-              date: new Date().toLocaleString('en-IN')
+              date: new Date().toLocaleString('en-IN'),
+              createdAt: new Date().toISOString()
             });
 
             announceVoice(`Winning number ${targetWinNum}, ${colorText}${parityText}! Congratulations, you won Rupees ${totalWin}!`);

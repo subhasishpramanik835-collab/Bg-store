@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { WalletTransaction } from '../types';
 import { soundFx } from '../utils/audio';
+import { sortChronologicalNewestFirst } from '../utils/supercar';
 import { VoucherGenerator } from './VoucherGenerator';
 import { PaginationBar } from './PaginationBar';
 
@@ -210,7 +211,9 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
   };
 
   // Filter & Search Logic
-  const filteredTransactions = transactions
+  const sortedTransactions = sortChronologicalNewestFirst(transactions);
+
+  const filteredTransactions = sortedTransactions
     .filter((tx) => {
       if (typeFilter === 'deposit') {
         if (tx.type !== 'deposit') return false;

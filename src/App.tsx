@@ -30,7 +30,7 @@ import { SuperCarDrawSection } from './components/SuperCarDrawSection';
 import { CompactUserDashboardCard } from './components/CompactUserDashboardCard';
 import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
 import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor } from './types';
-import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo } from './utils/supercar';
+import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo, getCurrentSuperCarSchedule, getSlotFromTicket, getWinningCarForSlot, sortChronologicalNewestFirst } from './utils/supercar';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
@@ -180,15 +180,6 @@ export default function App() {
       if (unsubTickets) { try { unsubTickets(); } catch (_) {} unsubTickets = null; }
       if (unsubRoulette) { try { unsubRoulette(); } catch (_) {} unsubRoulette = null; }
       if (unsubNotifications) { try { unsubNotifications(); } catch (_) {} unsubNotifications = null; }
-    };
-
-    const sortChronologicalNewestFirst = <T extends { date?: string; purchaseDate?: string; id: string }>(items: T[]): T[] => {
-      return [...items].sort((a, b) => {
-        const timeA = a.date ? new Date(a.date).getTime() : (a.purchaseDate ? new Date(a.purchaseDate).getTime() : 0);
-        const timeB = b.date ? new Date(b.date).getTime() : (b.purchaseDate ? new Date(b.purchaseDate).getTime() : 0);
-        if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeB - timeA;
-        return b.id.localeCompare(a.id);
-      });
     };
 
     const attachRealtimeUserListeners = (activeUid: string, claimsAdmin: boolean) => {
@@ -566,7 +557,13 @@ export default function App() {
   }, [supercarConfig, isSuperCarEnabled]);
 
   // SuperCar Ticket Purchase Handler
-  const handleConfirmSuperCarTicketBuy = async (carColor: SuperCarColor, quantity: number, totalCost: number) => {
+  const handleConfirmSuperCarTicketBuy = async (
+    carColor: SuperCarColor,
+    quantity: number,
+    totalCost: number,
+    issueId?: string,
+    slotNum?: number
+  ) => {
     const currentUserId = user?.id || 'anonymous';
     const currentBalance = user?.balance || 0;
     logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost }, currentUserId, user?.email);
@@ -588,29 +585,59 @@ export default function App() {
     }));
     if (user?.id) persistUserBalance(user.id, newBal);
 
-    const nowStr = new Date().toLocaleString('en-IN');
+    const now = new Date();
+    const isoDateStr = now.toISOString();
+    const year = now.getFullYear();
+    const monthStr = String(now.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(now.getDate()).padStart(2, '0');
+    const todayDashDate = `${year}-${monthStr}-${dayStr}`;
+    const todayCompactDate = `${year}${monthStr}${dayStr}`;
+
+    let activeSlot = slotNum;
+    let activeIssueId = issueId;
+
+    if (!activeSlot || !activeIssueId) {
+      const sched = getCurrentSuperCarSchedule(supercarConfig);
+      activeSlot = sched.drawIndex;
+      activeIssueId = sched.issueId;
+    }
+
+    // Calculate slot time label (08:00 AM + (activeSlot - 1)*10 mins)
+    const startMins = 8 * 60 + (activeSlot - 1) * 10;
+    const h = Math.floor(startMins / 60);
+    const m = startMins % 60;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const formattedH = h % 12 === 0 ? 12 : h % 12;
+    const slotTimeLabel = `${String(formattedH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+
+    const exactTimeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     const newTickets: PurchasedTicket[] = [];
+    const pricePerTicket = quantity > 0 ? Math.round(totalCost / quantity) : (supercarConfig.ticketPrice || 100);
 
     for (let i = 0; i < quantity; i++) {
-      const ticketNum = `CAR-${carColor.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const ticketNum = `CAR-${carColor.toUpperCase()}-${Math.floor(10000 + Math.random() * 90000)}`;
       const newTicket: PurchasedTicket = {
-        id: `TKT-SC-${Date.now()}-${i}`,
+        id: `TKT-SC-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
         userId: currentUserId,
-        drawId: `SUPERCAR-${Date.now().toString().slice(-6)}`,
-        drawTitle: `Super Car - ${carColor.toUpperCase()} CAR`,
+        drawId: activeIssueId,
+        drawTitle: `3 Super Car Draw - ${carColor.toUpperCase()} CAR (Slot #${String(activeSlot).padStart(2, '0')} - ${slotTimeLabel})`,
         category: 'Three Super Car Draw',
         selectedNumbers: [carColor.toUpperCase()],
         ticketNumber: ticketNum,
-        price: supercarConfig.ticketPrice || 100,
-        purchaseDate: nowStr,
-        drawDate: 'Today 30-min Draw',
+        price: pricePerTicket,
+        purchaseDate: todayDashDate,
+        purchaseTime: exactTimeStr,
+        drawTime: slotTimeLabel,
+        drawDate: todayDashDate,
+        createdAt: isoDateStr,
         status: 'active',
-        selectedCar: carColor
+        selectedCar: carColor.toLowerCase() as SuperCarColor,
+        slotNum: activeSlot
       };
       newTickets.push(newTicket);
     }
 
-    setTickets((prev) => [...newTickets, ...prev]);
+    setTickets((prev) => sortChronologicalNewestFirst([...newTickets, ...prev]));
     newTickets.forEach((t) => persistTicket(t));
 
     const tx: WalletTransaction = {
@@ -620,9 +647,10 @@ export default function App() {
       amount: -totalCost,
       description: `Purchased ${quantity}x ${carColor.toUpperCase()} Super Car Ticket(s) (+${earnedVipPts} VIP Pts)`,
       status: 'completed',
-      date: nowStr
+      date: isoDateStr,
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [tx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([tx, ...prev]));
     persistTransaction(tx);
 
     triggerConfetti();
@@ -638,22 +666,31 @@ export default function App() {
 
     const updatedTickets = tickets.map((t) => {
       if (t.category === 'Three Super Car Draw' && t.status === 'active') {
-        if (t.selectedCar === winningCar) {
-          const winAmt = Math.round(t.price * multiplier);
-          totalWonAmount += winAmt;
-          const updatedT = { ...t, status: 'win' as const, winAmount: winAmt };
-          persistTicket(updatedT);
-          return updatedT;
-        } else {
-          const updatedT = { ...t, status: 'loss' as const };
-          persistTicket(updatedT);
-          return updatedT;
+        const slotInfo = getSlotFromTicket(t, supercarConfig);
+        const matchesDraw =
+          t.drawId === issueId ||
+          slotInfo.issueId === issueId ||
+          (t.drawTitle && t.drawTitle.includes(issueId));
+
+        if (matchesDraw) {
+          const tCar = (t.selectedCar || t.selectedNumbers?.[0] as string || 'red').toLowerCase();
+          if (tCar === winningCar.toLowerCase()) {
+            const winAmt = Math.round(t.price * multiplier);
+            totalWonAmount += winAmt;
+            const updatedT = { ...t, status: 'win' as const, winAmount: winAmt, drawId: issueId };
+            persistTicket(updatedT);
+            return updatedT;
+          } else {
+            const updatedT = { ...t, status: 'loss' as const, drawId: issueId };
+            persistTicket(updatedT);
+            return updatedT;
+          }
         }
       }
       return t;
     });
 
-    setTickets(updatedTickets);
+    setTickets(sortChronologicalNewestFirst(updatedTickets));
 
     if (totalWonAmount > 0) {
       const newBal = user.balance + totalWonAmount;
@@ -667,12 +704,12 @@ export default function App() {
         amount: totalWonAmount,
         description: `🏆 WON Super Car Draw Jackpot (${winningCar.toUpperCase()} Car Winner!)`,
         status: 'completed',
-        date: new Date().toLocaleString('en-IN')
+        date: new Date().toLocaleString('en-IN'),
+        createdAt: new Date().toISOString()
       };
-      setTransactions((prev) => [winTx, ...prev]);
+      setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
       persistTransaction(winTx);
 
-      // Trigger High-Visibility Toast Notification
       setSuperCarWinToast({
         id: `sc-toast-manual-${Date.now()}`,
         winningCar,
@@ -694,6 +731,112 @@ export default function App() {
       console.error('Error recording supercar draw result:', err);
     }
   };
+
+  // Continuous Auto-Settlement Engine for Expired Super Car Tickets
+  useEffect(() => {
+    if (!tickets || tickets.length === 0) return;
+
+    const interval = setInterval(() => {
+      const activeSuperCarTickets = tickets.filter(
+        (t) => t.category === 'Three Super Car Draw' && t.status === 'active'
+      );
+
+      if (activeSuperCarTickets.length === 0) return;
+
+      const nowMs = Date.now();
+      let totalNewWonAmount = 0;
+      let lastWonCar: SuperCarColor = 'black';
+      let hasSettled = false;
+
+      const updated = tickets.map((t) => {
+        if (t.category === 'Three Super Car Draw' && t.status === 'active') {
+          const slotInfo = getSlotFromTicket(t, supercarConfig);
+          // Has draw timer expired for this slot?
+          if (nowMs >= slotInfo.drawEndTimeMs) {
+            hasSettled = true;
+            const winningCar = getWinningCarForSlot(
+              slotInfo.slotNum,
+              slotInfo.issueId,
+              supercarPastDraws,
+              supercarConfig
+            );
+
+            const playerCar = (t.selectedCar || t.selectedNumbers?.[0] || 'red')
+              .toString()
+              .toLowerCase() as SuperCarColor;
+
+            const isWinner = playerCar === winningCar.toLowerCase();
+
+            if (isWinner) {
+              const multiplier = supercarConfig.prizeMultiplier || 2.8;
+              const winAmt = Math.round(t.price * multiplier);
+              totalNewWonAmount += winAmt;
+              lastWonCar = winningCar;
+
+              const updatedT: PurchasedTicket = {
+                ...t,
+                status: 'win' as const,
+                wonAmount: winAmt,
+                slotNum: slotInfo.slotNum,
+                drawId: slotInfo.issueId
+              };
+              persistTicket(updatedT);
+              return updatedT;
+            } else {
+              const updatedT: PurchasedTicket = {
+                ...t,
+                status: 'loss' as const,
+                slotNum: slotInfo.slotNum,
+                drawId: slotInfo.issueId
+              };
+              persistTicket(updatedT);
+              return updatedT;
+            }
+          }
+        }
+        return t;
+      });
+
+      if (hasSettled) {
+        setTickets(sortChronologicalNewestFirst(updated));
+
+        if (totalNewWonAmount > 0) {
+          setUser((prev) => {
+            const newBal = prev.balance + totalNewWonAmount;
+            if (prev.id) persistUserBalance(prev.id, newBal);
+            return { ...prev, balance: newBal };
+          });
+
+          const winTx: WalletTransaction = {
+            id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
+            userId: user.id || 'anonymous',
+            type: 'ticket_win',
+            amount: totalNewWonAmount,
+            description: `🏆 Auto Payout: WON Super Car Draw (${lastWonCar.toUpperCase()} Winner!)`,
+            status: 'completed',
+            date: new Date().toLocaleString('en-IN'),
+            createdAt: new Date().toISOString()
+          };
+          setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
+          persistTransaction(winTx);
+
+          try {
+            soundFx.playWinFanfare();
+            triggerConfetti();
+          } catch (_) {}
+
+          setSuperCarWinToast({
+            id: `sc-toast-auto-${Date.now()}`,
+            winningCar: lastWonCar,
+            amountWon: totalNewWonAmount,
+            issueId: 'Auto Payout'
+          });
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [tickets, supercarPastDraws, supercarConfig, user.id]);
 
   // Automated Real-time SuperCar Win Toast Detector for user tickets
   useEffect(() => {
@@ -865,10 +1008,11 @@ export default function App() {
       utr,
       screenshotUrl,
       date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString(),
       status: 'pending'
     };
 
-    setDeposits((prev) => [newDep, ...prev]);
+    setDeposits((prev) => sortChronologicalNewestFirst([newDep, ...prev]));
     persistDeposit(newDep);
 
     // Send real-time SMTP Email notification
@@ -940,9 +1084,10 @@ export default function App() {
       amount: dep.amount,
       description: `Approved Deposit via ${(dep.method || 'UPI').toString().toUpperCase()} (UTR: ${dep.utr})`,
       status: 'completed',
-      date: new Date().toLocaleString('en-IN')
+      date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [depTx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([depTx, ...prev]));
     persistTransaction(depTx);
 
     // Send Notification
@@ -988,9 +1133,10 @@ export default function App() {
         amount: dep.amount,
         description: `Deposit Rejected: ${reason}`,
         status: 'rejected',
-        date: new Date().toLocaleString('en-IN')
+        date: new Date().toLocaleString('en-IN'),
+        createdAt: new Date().toISOString()
       };
-      setTransactions((prev) => [rejTx, ...prev]);
+      setTransactions((prev) => sortChronologicalNewestFirst([rejTx, ...prev]));
       persistTransaction(rejTx);
 
       const rejectNtf: NotificationItem = {
@@ -1029,10 +1175,11 @@ export default function App() {
       ifscCode,
       upiId,
       date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString(),
       status: 'pending'
     };
 
-    setWithdrawals((prev) => [newWth, ...prev]);
+    setWithdrawals((prev) => sortChronologicalNewestFirst([newWth, ...prev]));
     persistWithdrawal(newWth);
 
     // Send real-time withdrawal submission email
@@ -1048,9 +1195,10 @@ export default function App() {
       amount: -amount,
       description: `Withdrawal Request to A/C ending ${accountNumber.slice(-4)}`,
       status: 'pending',
-      date: new Date().toLocaleString('en-IN')
+      date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [wthTx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([wthTx, ...prev]));
     persistTransaction(wthTx);
   };
 
@@ -1202,7 +1350,7 @@ export default function App() {
       status: 'active'
     }));
 
-    setTickets((prev) => [...newTickets, ...prev]);
+    setTickets((prev) => sortChronologicalNewestFirst([...newTickets, ...prev]));
     newTickets.forEach((t) => persistTicket(t));
 
     // Log transaction
@@ -1213,9 +1361,10 @@ export default function App() {
       amount: -totalPrice,
       description: `Purchased ${ticketDigitsArray.length} Ticket(s) - ${draw.title} (+${earnedVipPts} VIP Pts)`,
       status: 'completed',
-      date: new Date().toLocaleString('en-IN')
+      date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [tx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([tx, ...prev]));
     persistTransaction(tx);
 
     // Update tickets sold count
@@ -1246,9 +1395,10 @@ export default function App() {
       amount: bonusAmount,
       description: `Weekly VIP Club Cash Bonus (${user.vipLevel})`,
       status: 'completed',
-      date: new Date().toLocaleString('en-IN')
+      date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [vipTx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([vipTx, ...prev]));
     persistTransaction(vipTx);
 
     const ntf: NotificationItem = {
@@ -1285,9 +1435,10 @@ export default function App() {
       amount: rewardAmount,
       description: `Lucky Wheel Bonus Reward`,
       status: 'completed',
-      date: new Date().toLocaleString('en-IN')
+      date: new Date().toLocaleString('en-IN'),
+      createdAt: new Date().toISOString()
     };
-    setTransactions((prev) => [wheelTx, ...prev]);
+    setTransactions((prev) => sortChronologicalNewestFirst([wheelTx, ...prev]));
     persistTransaction(wheelTx);
 
     const ntf: NotificationItem = {

@@ -10,7 +10,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, collection, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, storage } from '../../firebase';
 import { SuperCarConfig, SuperCarColor, PurchasedTicket, User } from '../../types';
-import { getSuperCarInfo } from '../../utils/supercar';
+import { getSuperCarInfo, formatTicketExactTime, formatTicketExactDateTime, sortChronologicalNewestFirst } from '../../utils/supercar';
 import { soundFx } from '../../utils/audio';
 import { PaginationBar } from '../PaginationBar';
 
@@ -136,6 +136,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
   };
 
   // Sub-Tab 3 (User Ticket Audit) State
+  const [auditSelectedDateStr, setAuditSelectedDateStr] = useState<string>(todayStr);
   const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('');
   const [ticketSlotFilter, setTicketSlotFilter] = useState<number | 'all'>('all');
   const [ticketStatusFilter, setTicketStatusFilter] = useState<'all' | 'active' | 'win' | 'loss'>('all');
@@ -155,7 +156,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
           fetched.push({ ...data, id: docSnap.id });
         }
       });
-      setTickets(fetched);
+      setTickets(sortChronologicalNewestFirst(fetched));
     }, (err) => console.warn('Supercar tickets listener notice:', err.message));
 
     // 2. Listen to supercar draws history
@@ -444,31 +445,39 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
     if (!t || !targetDateStr) return false;
 
     const [y, m, d] = targetDateStr.split('-').map(Number);
-    const compactDate = `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
-    const localizedSlash = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-    const localizedDash = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (!y || !m || !d) return false;
 
-    // 1. Check drawId / id / ticketNumber
-    const idStr = String(t.drawId || t.id || t.ticketNumber || '');
-    if (idStr.includes(compactDate)) return true;
+    const targetDash = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const targetCompact = `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
+    const targetSlash1 = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    const targetSlash2 = `${d}/${m}/${y}`;
 
-    // 2. Check drawTime / purchaseDate / drawDate string match
-    const tTime = String(t.drawTime || t.purchaseDate || t.drawDate || '');
-    if (tTime.includes(localizedDash) || tTime.includes(localizedSlash) || tTime.includes(compactDate)) return true;
+    // 1. Direct equality on string fields
+    if (t.purchaseDate === targetDash || t.drawDate === targetDash) return true;
+    if (t.purchaseDate === targetSlash1 || t.drawDate === targetSlash1) return true;
 
-    // 3. Check purchaseDate timestamp
-    if (t.purchaseDate) {
-      const pDate = new Date(t.purchaseDate);
-      if (!isNaN(pDate.getTime())) {
-        const pY = pDate.getFullYear();
-        const pM = String(pDate.getMonth() + 1).padStart(2, '0');
-        const pD = String(pDate.getDate()).padStart(2, '0');
-        if (`${pY}-${pM}-${pD}` === targetDateStr) return true;
+    // 2. Check createdAt ISO timestamp or Date object
+    const rawTimestamp = t.createdAt || t.purchaseDate || t.drawDate;
+    if (rawTimestamp) {
+      if (typeof rawTimestamp === 'string' && rawTimestamp.startsWith(targetDash)) return true;
+      const parsedDate = new Date(rawTimestamp);
+      if (!isNaN(parsedDate.getTime())) {
+        const pY = parsedDate.getFullYear();
+        const pM = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const pD = String(parsedDate.getDate()).padStart(2, '0');
+        if (`${pY}-${pM}-${pD}` === targetDash) return true;
       }
     }
 
-    // 4. Default fallback: if target date is today and ticket lacks date field, include it
-    if (!t.drawTime && !t.purchaseDate && !t.drawDate && !t.drawId && targetDateStr === todayStr) return true;
+    // 3. Check drawId / ticketNumber / id for compact date string
+    const idStr = String(t.drawId || t.ticketNumber || t.id || '');
+    if (idStr.includes(targetCompact) || idStr.includes(targetDash)) return true;
+
+    // 4. Check drawTime / purchaseDate text
+    const timeStr = String(t.drawTime || t.purchaseDate || t.drawDate || '');
+    if (timeStr.includes(targetDash) || timeStr.includes(targetSlash1) || timeStr.includes(targetSlash2) || timeStr.includes(targetCompact)) {
+      return true;
+    }
 
     return false;
   };
@@ -516,35 +525,63 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
   ];
 
   // Audit Tab Filtered Tickets
-  const auditFilteredTickets = supercarTickets.filter((t) => {
-    if (ticketSlotFilter !== 'all') {
-      const timeLabel = getSlotTimeLabel(ticketSlotFilter as number);
-      const matchesSlot = t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(ticketSlotFilter).padStart(2, '0')}`);
-      if (!matchesSlot) return false;
-    }
+  const auditFilteredTickets = supercarTickets
+    .filter((t) => {
+      // 1. Date Filter (Default: todayStr)
+      if (auditSelectedDateStr && auditSelectedDateStr !== 'all') {
+        if (!isTicketOnDate(t, auditSelectedDateStr)) return false;
+      }
 
-    if (ticketStatusFilter !== 'all') {
-      if (ticketStatusFilter === 'active' && t.status !== 'active' && t.status !== 'pending') return false;
-      if (ticketStatusFilter === 'win' && t.status !== 'win') return false;
-      if (ticketStatusFilter === 'loss' && t.status !== 'loss') return false;
-    }
+      // 2. Slot Filter
+      if (ticketSlotFilter !== 'all') {
+        const timeLabel = getSlotTimeLabel(ticketSlotFilter as number);
+        const matchesSlot = t.drawTime?.toString().includes(timeLabel) || t.drawTitle?.includes(timeLabel) || t.drawTitle?.includes(`Slot #${String(ticketSlotFilter).padStart(2, '0')}`);
+        if (!matchesSlot) return false;
+      }
 
-    if (ticketCarFilter !== 'all') {
-      const carChoice = (t.selectedCar || t.selectedNumbers?.[0] as string || '').toLowerCase();
-      if (carChoice !== ticketCarFilter) return false;
-    }
+      // 3. Status Filter
+      if (ticketStatusFilter !== 'all') {
+        if (ticketStatusFilter === 'active' && t.status !== 'active' && t.status !== 'pending') return false;
+        if (ticketStatusFilter === 'win' && t.status !== 'win') return false;
+        if (ticketStatusFilter === 'loss' && t.status !== 'loss') return false;
+      }
 
-    if (ticketSearchTerm.trim()) {
-      const term = ticketSearchTerm.toLowerCase();
-      const uObj = usersMap[t.userId];
-      const name = uObj?.name?.toLowerCase() || '';
-      const phone = uObj?.phone || '';
-      const tNum = (t.ticketNumber || t.id).toLowerCase();
-      return name.includes(term) || phone.includes(term) || tNum.includes(term) || t.userId.toLowerCase().includes(term);
-    }
+      // 4. Car Filter
+      if (ticketCarFilter !== 'all') {
+        const carChoice = (t.selectedCar || t.selectedNumbers?.[0] as string || '').toLowerCase();
+        if (carChoice !== ticketCarFilter) return false;
+      }
 
-    return true;
-  });
+      // 5. Search Bar (User Name, Phone, Ticket #, User ID)
+      if (ticketSearchTerm.trim()) {
+        const term = ticketSearchTerm.toLowerCase();
+        const uObj = usersMap[t.userId];
+        const name = (t as any).userName?.toLowerCase() || uObj?.name?.toLowerCase() || '';
+        const phone = (t as any).userPhone || uObj?.phone || '';
+        const tNum = (t.ticketNumber || t.id).toLowerCase();
+        const uId = t.userId.toLowerCase();
+        return name.includes(term) || phone.includes(term) || tNum.includes(term) || uId.includes(term);
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      // RECENT TICKETS ALWAYS AT THE TOP (Descending by creation timestamp / ID)
+      const getTime = (ticket: PurchasedTicket & Record<string, any>) => {
+        if (ticket.createdAt) {
+          const parsed = new Date(ticket.createdAt).getTime();
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        if (ticket.purchaseDate) {
+          const parsed = new Date(ticket.purchaseDate).getTime();
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        const numMatch = ticket.id?.match(/\d+/g);
+        if (numMatch && numMatch.length > 0) return parseInt(numMatch.join(''), 10);
+        return 0;
+      };
+      return getTime(b) - getTime(a);
+    });
 
   const totalAutoWonAmt = supercarTickets.filter((t) => t.status === 'win').reduce((sum, t) => sum + (t.wonAmount || 0), 0);
   const totalAutoWonCount = supercarTickets.filter((t) => t.status === 'win').length;
@@ -637,87 +674,56 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
       {activeSubTab === 'monitor' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           
-          {/* Header Controls */}
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-4 bg-slate-900 border border-amber-500/30 rounded-3xl">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-white flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-amber-400" />
-                  <span>3 SUPER CAR LIVE SALES MONITOR</span>
-                </h3>
-                <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
-                  📈 REAL-TIME RECHARTS
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">Live Ticket Distribution & Revenue Breakdown per slot</p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="bg-rose-500/20 text-rose-300 text-xs font-black px-3 py-1.5 rounded-xl border border-rose-500/30">
-                🔥 LEADER: {leaderColor}
-              </span>
-
-              <select
-                value={selectedMonitorSlot}
-                onChange={(e) => setSelectedMonitorSlot(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="bg-slate-950 border border-slate-700 text-amber-300 font-black text-xs rounded-xl px-3 py-2 outline-none cursor-pointer"
-              >
-                <option value="all">All 84 Daily Slots (10-Min)</option>
-                {Array.from({ length: 84 }, (_, i) => {
-                  const sNum = i + 1;
-                  return (
-                    <option key={sNum} value={sNum}>
-                      Slot #{String(sNum).padStart(2, '0')} ({getSlotTimeLabel(sNum)})
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          </div>
-
-          {/* CALENDAR DATE SELECTOR CARD FOR LIVE SALES MONITOR */}
-          <div className="p-3.5 bg-slate-900 border border-amber-500/30 rounded-3xl space-y-3 shadow-xl">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          {/* CALENDAR DATE & SLOT FILTER CONTROL BAR */}
+          <div className="p-4 bg-slate-900 border border-amber-500/30 rounded-3xl space-y-3 shadow-xl">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                  <Calendar className="w-4 h-4" />
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Calendar className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-white block">Filter Ticket Sales by Calendar Date</span>
-                  <span className="text-[10px] text-amber-400 font-bold">
-                    Selected Date: {monitorSelectedDateStr} ({monitorDateFilteredTickets.length} Total Sales Recorded)
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-white block">Filter Ticket Sales by Date</span>
+                    <span className="bg-rose-500/20 text-rose-300 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-rose-500/30 uppercase">
+                      🔥 LEADER: {leaderColor}
+                    </span>
+                  </div>
+                  <span className="text-xs text-amber-400 font-bold">
+                    Selected Date: {monitorSelectedDateStr} ({monitorDateFilteredTickets.length} Sales on this date)
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 <button
                   type="button"
                   onClick={() => {
                     soundFx.playClick();
                     setMonitorSelectedDateStr(todayStr);
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     monitorSelectedDateStr === todayStr
                       ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
                       : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
                   }`}
                 >
-                  Today
+                  Today Only
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     soundFx.playClick();
-                    const d = new Date();
-                    d.setDate(d.getDate() - 1);
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    setMonitorSelectedDateStr(`${y}-${m}-${day}`);
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+                    setMonitorSelectedDateStr(yStr);
                   }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer"
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    monitorSelectedDateStr !== todayStr && monitorSelectedDateStr === `${new Date(Date.now() - 86400000).getFullYear()}-${String(new Date(Date.now() - 86400000).getMonth() + 1).padStart(2, '0')}-${String(new Date(Date.now() - 86400000).getDate()).padStart(2, '0')}`
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
                 >
                   Yesterday
                 </button>
@@ -726,11 +732,29 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                   type="date"
                   value={monitorSelectedDateStr}
                   onChange={(e) => {
-                    soundFx.playClick();
-                    setMonitorSelectedDateStr(e.target.value);
+                    if (e.target.value) {
+                      soundFx.playClick();
+                      setMonitorSelectedDateStr(e.target.value);
+                    }
                   }}
-                  className="bg-slate-950 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold rounded-xl px-3 py-1.5 outline-none cursor-pointer focus:border-amber-400"
+                  className="bg-slate-950 border border-amber-500/40 text-amber-300 font-black text-xs rounded-xl px-3 py-2 outline-none cursor-pointer"
                 />
+
+                <select
+                  value={selectedMonitorSlot}
+                  onChange={(e) => setSelectedMonitorSlot(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-700 text-amber-300 font-black text-xs rounded-xl px-3 py-2 outline-none cursor-pointer"
+                >
+                  <option value="all">All 84 Daily Slots (10-Min)</option>
+                  {Array.from({ length: 84 }, (_, i) => {
+                    const sNum = i + 1;
+                    return (
+                      <option key={sNum} value={sNum}>
+                        Slot #{String(sNum).padStart(2, '0')} ({getSlotTimeLabel(sNum)})
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
             </div>
           </div>
@@ -780,7 +804,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
 
             {/* Recharts Component */}
             <div className="h-64 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer key={`recharts-resp-${monitorFilteredTickets.length}-${monitorTotalRev}`} width="100%" height="100%">
                 <BarChart data={rechartsData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
                   <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
@@ -1405,52 +1429,130 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
             </span>
           </div>
 
-          {/* Multi-Filters Bar */}
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="relative w-full md:flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search user name, phone, or ticket #..."
-                value={ticketSearchTerm}
-                onChange={(e) => setTicketSearchTerm(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl pl-9 pr-3 py-2 outline-none focus:border-amber-500/50"
-              />
+          {/* Multi-Filters Bar with Calendar Date Selection */}
+          <div className="p-4 bg-slate-900 border border-slate-800 rounded-3xl space-y-3">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white">Date Filter:</span>
+                <span className="text-xs font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                  {auditSelectedDateStr === 'all' ? 'All Time History' : auditSelectedDateStr === todayStr ? `Today (${todayStr})` : auditSelectedDateStr}
+                </span>
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  ⚡ Recent Tickets First ({auditFilteredTickets.length})
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { soundFx.playClick(); } catch (_) {}
+                    setAuditSelectedDateStr(todayStr);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auditSelectedDateStr === todayStr
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  Today Only
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { soundFx.playClick(); } catch (_) {}
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+                    setAuditSelectedDateStr(yStr);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auditSelectedDateStr !== 'all' && auditSelectedDateStr !== todayStr
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  Past Date
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { soundFx.playClick(); } catch (_) {}
+                    setAuditSelectedDateStr('all');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auditSelectedDateStr === 'all'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  All Dates
+                </button>
+
+                <input
+                  type="date"
+                  value={auditSelectedDateStr === 'all' ? '' : auditSelectedDateStr}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      try { soundFx.playClick(); } catch (_) {}
+                      setAuditSelectedDateStr(e.target.value);
+                    }
+                  }}
+                  className="bg-slate-950 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-1.5 outline-none cursor-pointer"
+                  title="Pick a custom date"
+                />
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-              <select
-                value={ticketSlotFilter}
-                onChange={(e) => setTicketSlotFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none"
-              >
-                <option value="all">All Slots (1 to 84)</option>
-                {Array.from({ length: 84 }, (_, i) => (
-                  <option key={i + 1} value={i + 1}>Slot #{String(i + 1).padStart(2, '0')}</option>
-                ))}
-              </select>
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+              <div className="relative w-full md:flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search user name, phone, ticket # or UID..."
+                  value={ticketSearchTerm}
+                  onChange={(e) => setTicketSearchTerm(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl pl-9 pr-3 py-2 outline-none focus:border-amber-500/50"
+                />
+              </div>
 
-              <select
-                value={ticketStatusFilter}
-                onChange={(e) => setTicketStatusFilter(e.target.value as any)}
-                className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active Pending</option>
-                <option value="win">Won Tickets</option>
-                <option value="loss">Lost Tickets</option>
-              </select>
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                <select
+                  value={ticketSlotFilter}
+                  onChange={(e) => setTicketSlotFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none cursor-pointer"
+                >
+                  <option value="all">All Slots (1 to 84)</option>
+                  {Array.from({ length: 84 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>Slot #{String(i + 1).padStart(2, '0')}</option>
+                  ))}
+                </select>
 
-              <select
-                value={ticketCarFilter}
-                onChange={(e) => setTicketCarFilter(e.target.value as any)}
-                className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none"
-              >
-                <option value="all">All Car Types</option>
-                <option value="red">Red Only</option>
-                <option value="black">Black Only</option>
-                <option value="yellow">Yellow Only</option>
-              </select>
+                <select
+                  value={ticketStatusFilter}
+                  onChange={(e) => setTicketStatusFilter(e.target.value as any)}
+                  className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active Pending</option>
+                  <option value="win">Won Tickets</option>
+                  <option value="loss">Lost Tickets</option>
+                </select>
+
+                <select
+                  value={ticketCarFilter}
+                  onChange={(e) => setTicketCarFilter(e.target.value as any)}
+                  className="bg-slate-950 border border-slate-800 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 outline-none cursor-pointer"
+                >
+                  <option value="all">All Car Types</option>
+                  <option value="red">Red Only</option>
+                  <option value="black">Black Only</option>
+                  <option value="yellow">Yellow Only</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1470,34 +1572,62 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                       const name = (ticket as any).userName || uObj?.name || 'BETGURU Player';
                       const phone = (ticket as any).userPhone || uObj?.phone || 'N/A';
                       const carChoice = (ticket.selectedCar || ticket.selectedNumbers?.[0] as string || 'red').toLowerCase() as SuperCarColor;
+                      const carInfo = getSuperCarInfo(carChoice, config);
                       const isSettling = settlingTicketId === ticket.id;
+                      const exactTimeStr = formatTicketExactTime(ticket);
+                      const exactDateTimeStr = formatTicketExactDateTime(ticket);
 
                       return (
-                        <div key={ticket.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg hover:border-amber-500/40 transition-all">
-                          {/* Ticket Info */}
-                          <div className="space-y-1 font-mono">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-black text-amber-400">#{ticket.ticketNumber || ticket.id}</span>
-                              <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
-                                carChoice === 'red' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : carChoice === 'black' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+                        <div key={ticket.id} className="p-4 bg-slate-950 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl transition-all font-mono">
+                          
+                          {/* Left Block: Car Photo + Ticket Info */}
+                          <div className="flex items-start sm:items-center gap-3.5 flex-1 w-full">
+                            
+                            {/* Car Image Preview Thumbnail */}
+                            <div className="relative w-24 h-16 sm:w-28 sm:h-20 rounded-xl overflow-hidden border-2 border-amber-500/40 shadow-md shrink-0 bg-slate-900 group">
+                              <img
+                                src={carInfo.image}
+                                alt={carInfo.name}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
+                              <span className={`absolute bottom-0.5 left-0.5 text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                carChoice === 'red' ? 'bg-rose-500 text-white' : carChoice === 'black' ? 'bg-amber-500 text-slate-950' : 'bg-yellow-400 text-slate-950'
                               }`}>
-                                {carChoice.toUpperCase()} CAR
+                                {carChoice} CAR
                               </span>
-                              <span className="text-xs font-bold text-white">• {ticket.drawTitle || '3 Super Car Draw'}</span>
                             </div>
 
-                            <p className="text-xs text-slate-300">
-                              Player: <strong className="text-white">{name}</strong> ({phone}) | UID: <span className="text-amber-300">{ticket.userId}</span>
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                              Purchased At: {ticket.purchaseDate || 'N/A'} | Ticket Price: <span className="text-emerald-400 font-bold">₹{ticket.price}</span>
-                            </p>
+                            {/* Ticket Text Details */}
+                            <div className="space-y-1 flex-1 min-w-0">
+                              
+                              {/* Glowing Animated Purchase Time Badge - PROMINENT AT TOP */}
+                              <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <div className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-amber-500/20 border border-amber-400/80 px-2.5 py-0.5 rounded-full text-amber-300 font-black text-[11px] shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse">
+                                  <Clock className="w-3 h-3 text-amber-400 animate-spin [animation-duration:3s]" />
+                                  <span>TIME: {exactDateTimeStr}</span>
+                                </div>
+                                <span className="text-xs font-black text-amber-400">#{ticket.ticketNumber || ticket.id}</span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-white truncate">{ticket.drawTitle || '3 Super Car Draw'}</span>
+                              </div>
+
+                              <p className="text-xs text-slate-300 truncate">
+                                Player: <strong className="text-white">{name}</strong> ({phone})
+                              </p>
+                              
+                              <p className="text-[10px] text-slate-400">
+                                UID: <span className="text-amber-300 font-bold">{ticket.userId}</span> • Price: <span className="text-emerald-400 font-bold">₹{ticket.price}</span>
+                              </p>
+                            </div>
                           </div>
 
                           {/* Right Controls: Status & Win / Lose Buttons */}
-                          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-800">
+                          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-800 shrink-0">
                             <div className="text-left md:text-right">
-                              <span className="text-[9px] text-slate-400 uppercase block">Current Status</span>
+                              <span className="text-[9px] text-slate-400 uppercase block font-bold">Status</span>
                               <span className={`text-xs font-black uppercase px-3 py-1 rounded-full border block ${
                                 ticket.status === 'win'
                                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
@@ -1505,12 +1635,12 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                                   ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                                   : 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                               }`}>
-                                {ticket.status === 'win' ? `WON ₹${(ticket.wonAmount || 0).toLocaleString('en-IN')}` : ticket.status}
+                                {ticket.status === 'win' ? `WON ₹${(ticket.wonAmount || 0).toLocaleString('en-IN')}` : ticket.status === 'loss' ? 'LOST (NO REFUND)' : 'ACTIVE PENDING'}
                               </span>
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                               <button
                                 disabled={isSettling}
                                 onClick={() => handleManualSettleTicket(ticket, 'win')}
@@ -1532,7 +1662,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                               <button
                                 disabled={isSettling}
                                 onClick={() => handleManualSettleTicket(ticket, 'active')}
-                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
                                 title="Reset status to active"
                               >
                                 <RotateCcw className="w-3.5 h-3.5 text-slate-400" />

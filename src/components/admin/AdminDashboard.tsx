@@ -3,6 +3,7 @@ import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
 import { soundFx } from '../../utils/audio';
+import { sortChronologicalNewestFirst } from '../../utils/supercar';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { AdminSuperCarManager } from './AdminSuperCarManager';
@@ -470,7 +471,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
             { id: 'payment', label: 'Payment Settings', icon: QrCode },
             { id: 'supercar', label: 'Super Car Draw', icon: Sparkles },
-            { id: 'supercar_analytics', label: 'Draw Analytics', icon: TrendingUp },
             { id: 'broadcast', label: 'Broadcast Center', icon: Bell },
             { id: 'smtp', label: 'Gmail SMTP', icon: Mail },
             { id: 'deposits', label: 'Deposits', count: pendingDepositsCount, icon: ArrowDownCircle },
@@ -873,6 +873,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {adminTab === 'scheduler' && (
         <div className="animate-in fade-in duration-200">
           <AdminSchedulerManager currentUser={user} />
+        </div>
+      )}
+
+      {/* PAYMENT MANAGER */}
+      {adminTab === 'payment' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminPaymentManager />
+        </div>
+      )}
+
+      {/* SUPER CAR MANAGER (LIVE SALES MONITOR, RECHARTS, SETTINGS) */}
+      {adminTab === 'supercar' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminSuperCarManager
+            config={supercarConfig}
+            onUpdateConfig={handleUpdateSupercarConfig}
+          />
+        </div>
+      )}
+
+      {/* BROADCAST CENTER */}
+      {adminTab === 'broadcast' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminBroadcastManager currentUser={user} />
+        </div>
+      )}
+
+      {/* GMAIL SMTP MANAGER */}
+      {adminTab === 'smtp' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminSmtpManager />
         </div>
       )}
 
@@ -1965,47 +1996,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB: PAYMENT SETTINGS MANAGER */}
-      {adminTab === 'payment' && (
-        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
-          <AdminPaymentManager />
-        </div>
-      )}
-
-      {/* TAB: SUPER CAR DRAW ANALYTICS */}
-      {adminTab === 'supercar_analytics' && (
-        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
-          <SuperCarDrawAnalytics tickets={tickets} />
-        </div>
-      )}
-
-      {/* TAB: THREE SUPER CAR DRAW ADMIN CONTROLS */}
-      {adminTab === 'supercar' && (
-        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
-          <AdminSuperCarManager config={supercarConfig} onUpdateConfig={handleUpdateSupercarConfig} />
-        </div>
-      )}
-
-      {/* TAB: BROADCAST & NOTIFICATION CENTER */}
-      {adminTab === 'broadcast' && (
-        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
-          <AdminBroadcastManager />
-        </div>
-      )}
-
-      {/* TAB: GMAIL SMTP MANAGEMENT */}
-      {adminTab === 'smtp' && (
-        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
-          <AdminSmtpManager />
-        </div>
-      )}
 
       {/* TAB 6: AUDIT LOGS */}
       {adminTab === 'audit' && (
         <div className="space-y-4 animate-in fade-in duration-200">
           <h2 className="text-lg font-black text-white font-mono">System Audit & Ledger Logs</h2>
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-2 font-mono text-xs">
-            {transactions.map((tx) => (
+            {sortChronologicalNewestFirst(transactions).map((tx) => (
               <div key={tx.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between text-slate-300">
                 <div>
                   <span className="text-slate-500 text-[10px] block">{tx.date}</span>

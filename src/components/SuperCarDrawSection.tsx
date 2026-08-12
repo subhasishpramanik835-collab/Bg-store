@@ -12,7 +12,7 @@ interface SuperCarDrawSectionProps {
   currentIssue: SuperCarDrawIssue | null;
   userTickets: PurchasedTicket[];
   pastDraws: SuperCarDrawIssue[];
-  onConfirmBuyTicket: (carColor: SuperCarColor, quantity: number, totalCost: number) => void;
+  onConfirmBuyTicket: (carColor: SuperCarColor, quantity: number, totalCost: number, issueId?: string, slotNum?: number) => void;
   onDrawResolved?: (issueId: string, winningCar: SuperCarColor) => void;
 }
 
@@ -25,11 +25,52 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
   onConfirmBuyTicket,
   onDrawResolved
 }) => {
+  const configRef = React.useRef(config);
+  configRef.current = config;
+
+  const currentIssueRef = React.useRef(currentIssue);
+  currentIssueRef.current = currentIssue;
+
+  const onDrawResolvedRef = React.useRef(onDrawResolved);
+  onDrawResolvedRef.current = onDrawResolved;
+
+  const pastDrawsRef = React.useRef(pastDraws);
+  pastDrawsRef.current = pastDraws;
+
   const [scheduleInfo, setScheduleInfo] = useState(() => getCurrentSuperCarSchedule(config));
   const [selectedBuyCar, setSelectedBuyCar] = useState<SuperCarColor | null>(null);
   const [isResultsOpen, setIsResultsOpen] = useState<boolean>(false);
   const [activeTabCar, setActiveTabCar] = useState<SuperCarColor>('red');
   const [shufflingIndex, setShufflingIndex] = useState<number>(0);
+  const [winningCarAnnounced, setWinningCarAnnounced] = useState<SuperCarColor | null>(null);
+  const [showWinnerAnimation, setShowWinnerAnimation] = useState<boolean>(false);
+  const [lastResolvedIssueId, setLastResolvedIssueId] = useState<string>('');
+  const [tickCount, setTickCount] = useState<number>(0);
+
+  const lastResolvedIssueIdRef = React.useRef(lastResolvedIssueId);
+  lastResolvedIssueIdRef.current = lastResolvedIssueId;
+
+  const carsList: SuperCarColor[] = ['red', 'black', 'yellow'];
+
+  // Helper to determine the exact Admin Panel set winning car
+  const getAdminWinningCar = (): SuperCarColor => {
+    if (config?.resultMode === 'manual' && config?.manualWinner) {
+      return config.manualWinner;
+    }
+    const manualSlotWinner = config?.manualSlotWinners?.[scheduleInfo.issueId] || config?.manualSlotWinners?.[scheduleInfo.drawIndex];
+    if (manualSlotWinner) {
+      return manualSlotWinner;
+    }
+    if (currentIssue?.winningCar) {
+      return currentIssue.winningCar;
+    }
+    if (pastDraws && pastDraws.length > 0 && pastDraws[0].winningCar) {
+      return pastDraws[0].winningCar;
+    }
+    // Fallback deterministic index per issue draw index
+    const colors: SuperCarColor[] = ['red', 'black', 'yellow'];
+    return colors[(scheduleInfo.drawIndex * 7) % 3];
+  };
 
   // Robust check for enabled status: default to true if undefined, handle string "true"/"false" or boolean
   const isEnabled = config?.enabled === undefined
@@ -57,40 +98,98 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
     return null;
   }
 
-  // Synchronized tick interval for live countdown and shuffle animation
+  const prevScheduleRef = React.useRef(scheduleInfo);
+
+  // Synchronized ultra-smooth 500ms ticker for live countdown and draw resolution
   useEffect(() => {
     const timer = setInterval(() => {
-      const updatedSchedule = getCurrentSuperCarSchedule(config);
+      const cfg = configRef.current;
+      const updatedSchedule = getCurrentSuperCarSchedule(cfg);
+      const prevSchedule = prevScheduleRef.current;
+      
       setScheduleInfo(updatedSchedule);
+      setTickCount((prev) => (prev + 1) % 100);
 
-      // Handle draw completion at 0s if active
-      if (updatedSchedule.isOpen && updatedSchedule.timeRemainingMs <= 0) {
-        if (onDrawResolved && currentIssue && currentIssue.status !== 'completed') {
-          // Resolve winner automatically or via config manual winner
-          const winner: SuperCarColor = config.resultMode === 'manual' && config.manualWinner
-            ? config.manualWinner
-            : (['red', 'black', 'yellow'] as SuperCarColor[])[Math.floor(Math.random() * 3)];
-          
-          onDrawResolved(currentIssue.issueId, winner);
+      // Handle draw completion when slot transitions or countdown finishes
+      const isSlotChanged = prevSchedule && prevSchedule.issueId && prevSchedule.issueId !== updatedSchedule.issueId;
+      const isTimeZero = updatedSchedule.isOpen && updatedSchedule.timeRemainingMs <= 0;
+
+      if (isSlotChanged || isTimeZero) {
+        const resolvedIssueId = isSlotChanged ? prevSchedule.issueId : updatedSchedule.issueId;
+        const resolvedDrawIndex = isSlotChanged ? prevSchedule.drawIndex : updatedSchedule.drawIndex;
+
+        let winner: SuperCarColor = 'red';
+        if (cfg?.resultMode === 'manual' && cfg?.manualWinner) {
+          winner = cfg.manualWinner;
+        } else {
+          const manualSlotWinner = cfg?.manualSlotWinners?.[resolvedIssueId] || cfg?.manualSlotWinners?.[resolvedDrawIndex];
+          if (manualSlotWinner) {
+            winner = manualSlotWinner;
+          } else if (currentIssueRef.current?.winningCar) {
+            winner = currentIssueRef.current.winningCar;
+          } else if (pastDrawsRef.current && pastDrawsRef.current.length > 0 && pastDrawsRef.current[0].winningCar) {
+            winner = pastDrawsRef.current[0].winningCar;
+          } else {
+            const colors: SuperCarColor[] = ['red', 'black', 'yellow'];
+            winner = colors[(resolvedDrawIndex * 7) % 3];
+          }
+        }
+
+        const winnerIdx = ['red', 'black', 'yellow'].indexOf(winner);
+        if (winnerIdx !== -1) {
+          setShufflingIndex(winnerIdx);
+        }
+
+        if (lastResolvedIssueIdRef.current !== resolvedIssueId) {
+          setLastResolvedIssueId(resolvedIssueId);
+          setWinningCarAnnounced(winner);
+          setShowWinnerAnimation(true);
+
+          // Play Loud Winning Sound System
+          try {
+            soundFx.playLoudWinSound();
+          } catch (e) {
+            console.warn('Loud win sound error:', e);
+          }
+
+          if (onDrawResolvedRef.current) {
+            onDrawResolvedRef.current(resolvedIssueId, winner);
+          }
         }
       }
-    }, 1000);
+
+      prevScheduleRef.current = updatedSchedule;
+    }, 500);
 
     return () => clearInterval(timer);
-  }, [config, currentIssue, onDrawResolved]);
+  }, []);
 
   // High-speed car shuffle animation interval when in final 30 seconds
   useEffect(() => {
     if (!scheduleInfo.isShuffling) return;
 
     const shuffleInterval = setInterval(() => {
-      setShufflingIndex((prev) => (prev + 1) % 3);
-    }, 150);
+      setShufflingIndex((prev) => {
+        // Play engine rolling sound during shuffle
+        try {
+          soundFx.playCarRollingSound();
+        } catch (_) {}
+        return (prev + 1) % 3;
+      });
+    }, 180);
 
     return () => clearInterval(shuffleInterval);
   }, [scheduleInfo.isShuffling]);
 
-  const carsList: SuperCarColor[] = ['red', 'black', 'yellow'];
+  // Split countdown string (e.g., "03:13") into minutes and seconds
+  const countdownFormatted = formatCountdown(scheduleInfo.timeRemainingMs);
+  const [minsStr, secsStr] = countdownFormatted.split(':');
+  const isTickEven = tickCount % 2 === 0;
+
+  // Draw progress calculation
+  const totalIntervalMs = (config.drawIntervalMinutes || 10) * 60 * 1000;
+  const elapsedMs = Math.max(0, totalIntervalMs - scheduleInfo.timeRemainingMs);
+  const progressPercent = Math.min(100, Math.max(0, (elapsedMs / totalIntervalMs) * 100));
 
   return (
     <div id="supercar-draw-section-root" className="relative rounded-3xl bg-slate-900/90 border border-amber-500/30 p-3.5 sm:p-6 shadow-2xl overflow-hidden space-y-4 sm:space-y-5">
@@ -108,34 +207,77 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
               <h2 className="text-lg sm:text-2xl font-black font-mono tracking-tight text-white flex flex-wrap items-center gap-2">
                 <span>THREE SUPER CAR DRAW</span>
                 <span className="text-[9px] sm:text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase shrink-0">
-                  LIVE 30M
+                  LIVE 10M
                 </span>
               </h2>
               <p className="text-[11px] sm:text-xs text-slate-400 font-mono">
-                Operating Daily: 08:00 AM to 10:00 PM • One Draw Every 30 Minutes
+                Operating Daily: 08:00 AM to 10:00 PM • One Draw Every 10 Minutes
               </p>
             </div>
           </div>
         </div>
 
-        {/* Operating Status / Countdown Badge */}
+        {/* Operating Status / Animated Digital Countdown Badge */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
           {scheduleInfo.isOpen ? (
-            <div className={`p-2 sm:p-2.5 rounded-2xl border flex items-center gap-2 font-mono flex-1 sm:flex-initial justify-between sm:justify-start ${
+            <div className={`p-2 sm:p-2.5 rounded-2xl border flex flex-col gap-1.5 font-mono flex-1 sm:flex-initial shadow-xl transition-all duration-300 min-w-[200px] sm:min-w-[230px] ${
               scheduleInfo.isShuffling
-                ? 'bg-rose-950/80 border-rose-500 text-rose-300 animate-pulse'
-                : 'bg-slate-950/90 border-amber-500/40 text-amber-300'
+                ? 'bg-gradient-to-br from-rose-950/90 to-slate-950 border-rose-500/80 shadow-rose-900/30'
+                : 'bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/40 border-amber-500/50 shadow-amber-950/40'
             }`}>
-              <div className="flex items-center gap-2">
-                <Clock className={`w-4 h-4 shrink-0 ${scheduleInfo.isShuffling ? 'text-rose-400 animate-spin' : 'text-amber-400'}`} />
-                <div>
-                  <span className="text-[9px] sm:text-[10px] text-slate-400 block uppercase font-bold leading-tight">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      scheduleInfo.isShuffling ? 'bg-rose-400' : 'bg-emerald-400'
+                    }`}></span>
+                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                      scheduleInfo.isShuffling ? 'bg-rose-500' : 'bg-emerald-500'
+                    }`}></span>
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-amber-300 font-black uppercase tracking-wider">
                     {scheduleInfo.isShuffling ? 'SHUFFLING NOW' : `Issue #${scheduleInfo.issueId}`}
                   </span>
-                  <span className="text-xs sm:text-sm font-black tracking-wider text-white">
-                    {formatCountdown(scheduleInfo.timeRemainingMs)}
-                  </span>
                 </div>
+
+                <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-mono font-bold uppercase shrink-0">
+                  LIVE TICK
+                </span>
+              </div>
+
+              {/* Digital LED Clock Tiles */}
+              <div className="flex items-center justify-center gap-1.5 py-0.5">
+                <div className="flex items-baseline gap-0.5 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-amber-500/30 shadow-inner">
+                  <span className="text-base sm:text-xl font-black text-amber-300 tracking-wider">
+                    {minsStr}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-bold">m</span>
+                </div>
+
+                <span className={`text-base sm:text-xl font-black transition-all duration-150 ${
+                  isTickEven ? 'text-amber-400 opacity-100 scale-125' : 'text-amber-600/40 opacity-40 scale-90'
+                }`}>
+                  :
+                </span>
+
+                <div className="flex items-baseline gap-0.5 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-amber-500/30 shadow-inner">
+                  <span className="text-base sm:text-xl font-black text-amber-300 tracking-wider">
+                    {secsStr}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-bold">s</span>
+                </div>
+              </div>
+
+              {/* Live Speed Progress Bar */}
+              <div className="w-full bg-slate-800/90 h-1.5 rounded-full overflow-hidden border border-slate-700/50">
+                <div
+                  className={`h-full transition-all duration-500 ${
+                    scheduleInfo.isShuffling
+                      ? 'bg-gradient-to-r from-rose-500 to-amber-400 animate-pulse'
+                      : 'bg-gradient-to-r from-emerald-500 via-amber-400 to-yellow-400'
+                  }`}
+                  style={{ width: `${progressPercent}%` }}
+                ></div>
               </div>
             </div>
           ) : (
@@ -162,9 +304,12 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
       {/* SHUFFLE / RACE ANIMATION BANNER (Final 30 Seconds) */}
       {scheduleInfo.isShuffling && (
         <div className="relative p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-rose-950 via-slate-950 to-amber-950 border-2 border-amber-400 shadow-2xl space-y-2.5 sm:space-y-3 overflow-hidden text-center animate-pulse">
-          <div className="flex items-center justify-center gap-1.5 text-amber-300 font-black font-mono text-[10px] sm:text-xs uppercase tracking-wider">
+          <div className="flex items-center justify-center gap-1.5 sm:gap-2 text-amber-300 font-black font-mono text-[10px] sm:text-xs uppercase tracking-wider flex-wrap">
             <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400 animate-bounce shrink-0" />
             <span>30s SUPER CAR SHUFFLE IN PROGRESS - DRAWS CLOSING!</span>
+            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-md font-mono font-black text-xs shadow-md">
+              {formatCountdown(scheduleInfo.timeRemainingMs)}
+            </span>
             <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400 animate-bounce shrink-0" />
           </div>
 
@@ -179,7 +324,7 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
                   key={carKey}
                   className={`p-1.5 sm:p-2 rounded-xl border transition-all duration-150 transform ${
                     isActiveShuffleCar
-                      ? 'scale-105 bg-amber-500/20 border-amber-400 shadow-lg shadow-amber-500/40'
+                      ? 'scale-105 bg-amber-500/20 border-amber-400 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/50'
                       : 'scale-95 bg-slate-950 border-slate-800 opacity-60'
                   }`}
                 >
@@ -198,59 +343,57 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
         </div>
       )}
 
-      {/* LATEST DRAW WINNER BANNER (Realtime Result Display) */}
-      {pastDraws && pastDraws.length > 0 && (
-        <div className="p-3.5 sm:p-4 bg-gradient-to-r from-amber-950/80 via-slate-950 to-slate-900 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl animate-fade-in font-mono">
-          <div className="flex items-center gap-3">
-            <div className="relative w-16 h-12 rounded-xl overflow-hidden border border-amber-500/50 shrink-0 shadow-lg group">
+      {/* WINNING CAR CELEBRATION ANIMATION OVERLAY / BANNER */}
+      {showWinnerAnimation && winningCarAnnounced && (
+        <div className="relative p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-950 via-slate-950 to-yellow-950 border-2 border-amber-400 shadow-[0_0_50px_rgba(245,158,11,0.5)] space-y-3 text-center animate-bounce-once font-mono">
+          <div className="flex items-center justify-center gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-widest">
+            <Trophy className="w-5 h-5 text-amber-400 animate-pulse" />
+            <span>🎉 DRAW COMPLETED - WINNING CAR RESULT 🎉</span>
+            <Sparkles className="w-5 h-5 text-amber-300 animate-spin" />
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 bg-slate-900/90 border border-amber-500/40 p-3 sm:p-4 rounded-xl">
+            <div className="relative w-28 h-20 rounded-xl overflow-hidden border-2 border-amber-400 shadow-xl shrink-0 group">
               <img
-                src={getSuperCarInfo(pastDraws[0].winningCar, config).image}
-                alt={pastDraws[0].winningCar}
-                className="w-full h-full object-cover"
+                src={getSuperCarInfo(winningCarAnnounced, config).image}
+                alt={winningCarAnnounced}
+                className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-300"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
             </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-amber-400 font-black uppercase tracking-wider block">
-                  LATEST WINNING RESULT (#{pastDraws[0].issueId})
+            <div className="text-center sm:text-left space-y-1">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <span className="text-xs text-amber-400 font-black uppercase tracking-wider">
+                  OFFICIAL WINNER
                 </span>
-                <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-sans font-bold">
-                  RESOLVED
-                </span>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-sm sm:text-base font-black text-white uppercase">
-                  {getSuperCarInfo(pastDraws[0].winningCar, config).name}
-                </span>
-                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border uppercase ${
-                  pastDraws[0].winningCar === 'red' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' :
-                  pastDraws[0].winningCar === 'black' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
-                  'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
-                }`}>
-                  {pastDraws[0].winningCar} CAR WINNER
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded font-bold">
+                  VERIFIED BY ADMIN
                 </span>
               </div>
+              <h3 className="text-lg sm:text-2xl font-black text-white uppercase tracking-tight">
+                {getSuperCarInfo(winningCarAnnounced, config).name}
+              </h3>
+              <p className="text-xs text-amber-300/90 font-bold">
+                Payout Odds: <strong className="text-emerald-400 font-black">{config.prizeMultiplier || 2.8}x</strong> • Tag: {getSuperCarInfo(winningCarAnnounced, config).tagline}
+              </p>
             </div>
           </div>
-          <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
-            <span className="text-xs text-slate-300 font-bold">
-              Odds Payout: <strong className="text-emerald-400 font-black">{pastDraws[0].prizeMultiplier || config.prizeMultiplier || 2.8}x</strong>
-            </span>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setIsResultsOpen(true);
-              }}
-              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 font-black text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-md"
-            >
-              <span>Past Results ({pastDraws.length})</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setShowWinnerAnimation(false);
+            }}
+            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-lg"
+          >
+            DISMISS ANNOUNCEMENT
+          </button>
         </div>
       )}
+
+
 
       {/* CAR SELECTOR TAB BAR FOR QUICK MOBILE & DESKTOP NAVIGATION */}
       <div className="flex items-center justify-between gap-1.5 p-1 bg-slate-950/90 border border-slate-800 rounded-2xl">
@@ -446,7 +589,7 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
           ticketPrice={config.ticketPrice || 100}
           prizeMultiplier={config.prizeMultiplier || 2.8}
           onConfirmBuy={(carColor, quantity, totalCost) => {
-            onConfirmBuyTicket(carColor, quantity, totalCost);
+            onConfirmBuyTicket(carColor, quantity, totalCost, scheduleInfo.issueId, scheduleInfo.drawIndex);
             setSelectedBuyCar(null);
           }}
         />

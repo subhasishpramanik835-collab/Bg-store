@@ -348,6 +348,86 @@ class SoundManager {
       console.warn('Audio play error', e);
     }
   }
+
+  public playCarRollingSound() {
+    this.triggerHaptic(8);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220 + Math.random() * 120, now);
+      osc.frequency.exponentialRampToValueAtTime(450 + Math.random() * 150, now + 0.05);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playLoudWinSound() {
+    this.triggerHaptic([80, 100, 120, 200, 300]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // High Loud Fanfare Chords (C Major, G Major, High C Octave Burst)
+      const chordNotes = [
+        [261.63, 329.63, 392.00, 523.25],          // C4 major chord
+        [392.00, 493.88, 587.33, 783.99],          // G4 major chord
+        [523.25, 659.25, 783.99, 1046.50, 1318.51] // C5 major climax chord
+      ];
+
+      chordNotes.forEach((chord, chordIdx) => {
+        const startTime = now + chordIdx * 0.18;
+        chord.forEach((freq) => {
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = chordIdx === 2 ? 'sawtooth' : 'triangle';
+          osc.frequency.setValueAtTime(freq, startTime);
+
+          // Loud clear gain volume
+          gain.gain.setValueAtTime(0.28, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.65);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(startTime);
+          osc.stop(startTime + 0.65);
+        });
+      });
+
+      // High celebratory synth chime arpeggio
+      const chimes = [1046.50, 1318.51, 1567.98, 2093.00, 2637.02];
+      chimes.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + 0.55 + idx * 0.08);
+
+        gain.gain.setValueAtTime(0.3, now + 0.55 + idx * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55 + idx * 0.08 + 0.45);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + 0.55 + idx * 0.08);
+        osc.stop(now + 0.55 + idx * 0.08 + 0.45);
+      });
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
 }
 
 export const soundFx = new SoundManager();
