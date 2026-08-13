@@ -1,63 +1,84 @@
-import React, { useState } from 'react';
-import { X, Dices, Trophy, Sparkles, Gift } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Dices, Trophy, Sparkles, Gift, Lock, ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { soundFx } from '../utils/audio';
 import { logAnalyticsEvent } from '../utils/analytics';
+import { WheelSector, WheelConfig } from '../types';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface LuckyWheelModalProps {
   isOpen: boolean;
   onClose: () => void;
   onClaimReward: (rewardAmount: number) => void;
-  lastSpinTime?: number;
+  userSpinCredits?: number;
+  onOpenDeposit?: () => void;
 }
 
-const WHEEL_SECTORS = [
-  { label: '₹50', amount: 50, color: '#D4AF37' },
-  { label: '₹100', amount: 100, color: '#059669' },
-  { label: '₹250', amount: 250, color: '#2563EB' },
-  { label: '₹500', amount: 500, color: '#7C3AED' },
-  { label: '₹1,000', amount: 1000, color: '#DB2777' },
-  { label: '₹2,500', amount: 2500, color: '#EA580C' },
-  { label: '₹100', amount: 100, color: '#059669' },
-  { label: '₹5,000', amount: 5000, color: '#EAB308' }
+const DEFAULT_WHEEL_SECTORS: WheelSector[] = [
+  { id: '1', label: '₹50', amount: 50, color: '#D4AF37' },
+  { id: '2', label: '₹100', amount: 100, color: '#059669' },
+  { id: '3', label: '₹250', amount: 250, color: '#2563EB' },
+  { id: '4', label: '₹500', amount: 500, color: '#7C3AED' },
+  { id: '5', label: '₹1,000', amount: 1000, color: '#DB2777' },
+  { id: '6', label: '₹2,500', amount: 2500, color: '#EA580C' },
+  { id: '7', label: '₹100', amount: 100, color: '#059669' },
+  { id: '8', label: '₹5,000', amount: 5000, color: '#EAB308' }
 ];
 
 export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
   isOpen,
   onClose,
   onClaimReward,
-  lastSpinTime
+  userSpinCredits = 0,
+  onOpenDeposit
 }) => {
+  const [sectors, setSectors] = useState<WheelSector[]>(DEFAULT_WHEEL_SECTORS);
+  const [minDepositReq, setMinDepositReq] = useState<number>(1000);
   const [spinning, setSpinning] = useState<boolean>(false);
   const [rotation, setRotation] = useState<number>(0);
   const [wonReward, setWonReward] = useState<number | null>(null);
 
+  // Real-time listener for Firestore Wheel Configuration
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(doc(db, 'wheel_config', 'default'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as WheelConfig;
+        if (data.sectors && data.sectors.length > 0) {
+          setSectors(data.sectors);
+        }
+        if (typeof data.minDepositAmount === 'number') {
+          setMinDepositReq(data.minDepositAmount);
+        }
+      }
+    }, (err) => console.warn('Wheel listener err:', err));
+
+    return () => unsub();
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const now = Date.now();
-  const COOLDOWN_MS = 24 * 3600 * 1000; // 24 hours cooldown
-  const canSpin = !lastSpinTime || now - lastSpinTime > COOLDOWN_MS;
+  const canSpin = userSpinCredits > 0;
 
   const handleSpin = () => {
-    if (spinning || (!canSpin && wonReward === null)) return;
+    if (spinning || !canSpin) return;
 
     logAnalyticsEvent('game_start', { gameType: 'lucky_wheel' });
     soundFx.playClick();
     setSpinning(true);
     setWonReward(null);
 
-    // Random sector index
-    const winningIdx = Math.floor(Math.random() * WHEEL_SECTORS.length);
-    const reward = WHEEL_SECTORS[winningIdx].amount;
+    // Random sector index from live config
+    const winningIdx = Math.floor(Math.random() * sectors.length);
+    const reward = sectors[winningIdx].amount;
 
-    // Calculate degrees: 360 / sectors = 45 deg per sector
-    const sectorDeg = 360 / WHEEL_SECTORS.length;
-    // Add extra rotations (e.g. 5 full spins = 1800 deg) + offset
+    // Calculate degrees
+    const sectorDeg = 360 / sectors.length;
     const extraDegrees = 360 * 5 + (360 - winningIdx * sectorDeg - sectorDeg / 2);
     const newRotation = rotation + extraDegrees;
 
     setRotation(newRotation);
 
-    // Play tick sound periodically
     const tickInterval = setInterval(() => {
       soundFx.playSpinTick();
     }, 150);
@@ -82,20 +103,33 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
               <Dices className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-black text-white font-mono">Daily Lucky Spin Wheel</h2>
-              <p className="text-[10px] text-amber-400/80">Spin to Win Free Bonus Cash!</p>
+              <h2 className="text-base font-black text-white font-mono flex items-center gap-1.5">
+                <span>VIP Lucky Spin Wheel</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              </h2>
+              <p className="text-[10px] text-amber-400/80">Deposit ₹{minDepositReq.toLocaleString('en-IN')}+ to Earn Spin Credits!</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 text-center space-y-6 flex flex-col items-center">
+        <div className="p-6 text-center space-y-5 flex flex-col items-center">
           
+          {/* Spin Credits Counter Badge */}
+          <div className={`px-4 py-1.5 rounded-full text-xs font-mono font-black border flex items-center gap-2 ${
+            canSpin
+              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+              : 'bg-slate-800 text-slate-400 border-slate-700'
+          }`}>
+            {canSpin ? <Sparkles className="w-3.5 h-3.5 text-amber-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400/70" />}
+            <span>Available Spin Credits: <strong className="text-amber-400 text-sm font-bold">{userSpinCredits}</strong></span>
+          </div>
+
           {/* Wheel Graphic Container */}
           <div className="relative w-64 h-64 flex items-center justify-center">
             
@@ -111,8 +145,8 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
               }}
             >
               <svg viewBox="0 0 100 100" className="w-full h-full rounded-full overflow-hidden">
-                {WHEEL_SECTORS.map((sector, i) => {
-                  const angle = 360 / WHEEL_SECTORS.length;
+                {sectors.map((sector, i) => {
+                  const angle = 360 / sectors.length;
                   const startAngle = i * angle;
                   const endAngle = (i + 1) * angle;
 
@@ -124,7 +158,7 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
                   const pathData = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
 
                   return (
-                    <g key={i}>
+                    <g key={sector.id || i}>
                       <path d={pathData} fill={sector.color} opacity="0.9" stroke="#0f172a" strokeWidth="0.5" />
                       <text
                         x="50"
@@ -152,34 +186,54 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({
 
           {/* Reward Banner if Won */}
           {wonReward !== null && (
-            <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl animate-bounce">
-              <h4 className="text-xl font-black text-white font-mono flex items-center justify-center gap-2">
-                <Trophy className="w-6 h-6 text-amber-400" />
+            <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl animate-bounce">
+              <h4 className="text-base font-black text-white font-mono flex items-center justify-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-400" />
                 CONGRATS! YOU WON ₹{wonReward}!
               </h4>
-              <p className="text-xs text-emerald-300">Added to your wallet balance instantly.</p>
+              <p className="text-[10px] text-emerald-300">Added to your wallet balance instantly.</p>
             </div>
           )}
 
-          {/* Spin Trigger Button */}
-          <button
-            onClick={handleSpin}
-            disabled={spinning || (!canSpin && wonReward === null)}
-            className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl transition-all ${
-              canSpin || wonReward !== null
-                ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 shadow-amber-500/20 hover:scale-105 active:scale-95'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>
-              {spinning
-                ? 'SPINNING THE LUCKY WHEEL...'
-                : canSpin
-                ? 'SPIN NOW (FREE)'
-                : 'ALREADY SPUN TODAY (BACK TOMORROW)'}
-            </span>
-          </button>
+          {/* Condition Notice when Locked */}
+          {!canSpin && wonReward === null && (
+            <div className="p-3.5 bg-slate-950 border border-amber-500/30 rounded-2xl text-left space-y-2 text-xs font-mono">
+              <div className="flex items-center gap-2 text-amber-400 font-bold">
+                <Lock className="w-4 h-4 shrink-0" />
+                <span>Spin Credit Required to Unlock</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                • Deposit <strong>₹{minDepositReq.toLocaleString('en-IN')} or more</strong> to unlock <strong>1 Spin Credit</strong> per ₹1,000!
+                <br />
+                • Each qualifying deposit gives you 1 attempt to spin.
+                <br />
+                • Or receive bonus spins directly from the Admin.
+              </p>
+            </div>
+          )}
+
+          {/* Spin Trigger Button OR Unlock Deposit Button */}
+          {canSpin ? (
+            <button
+              onClick={handleSpin}
+              disabled={spinning}
+              className="w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 shadow-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer font-mono"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{spinning ? 'SPINNING THE WHEEL...' : 'SPIN NOW (1 CREDIT)'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                onClose();
+                if (onOpenDeposit) onOpenDeposit();
+              }}
+              className="w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/20 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer font-mono"
+            >
+              <span>DEPOSIT ₹{minDepositReq.toLocaleString('en-IN')}+ TO UNLOCK SPIN</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
 
         </div>
 

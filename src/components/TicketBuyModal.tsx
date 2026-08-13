@@ -126,23 +126,55 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
           </div>
 
           {/* Ticket Quantity Picker */}
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2 block">
-              Select Quantity
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-amber-400 block">
+              Select Quantity (Type or Choose)
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {[1, 3, 5, 10].map((qty) => (
+            <div className="flex items-center justify-between gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => { soundFx.playClick(); setTicketCount(Math.max(1, ticketCount - 1)); }}
+                className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              >
+                -
+              </button>
+              <div className="flex items-center justify-center gap-1.5 flex-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={ticketCount || ''}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setTicketCount(isNaN(val) ? 1 : Math.max(1, val));
+                  }}
+                  className="w-20 bg-slate-900 border border-amber-500/50 rounded-xl px-2 py-1 text-center font-mono font-black text-amber-300 text-lg focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                />
+                <span className="text-xs font-mono font-bold text-slate-400">
+                  {ticketCount === 1 ? 'Ticket' : 'Tickets'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { soundFx.playClick(); setTicketCount(ticketCount + 1); }}
+                className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              >
+                +
+              </button>
+            </div>
+            <div className="grid grid-cols-6 gap-1.5 pt-1">
+              {[1, 5, 10, 50, 80, 100].map((qty) => (
                 <button
                   key={qty}
                   type="button"
                   onClick={() => { soundFx.playClick(); setTicketCount(qty); }}
-                  className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                  className={`py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all cursor-pointer text-center ${
                     ticketCount === qty
-                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md shadow-amber-500/20'
                       : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-amber-500/30'
                   }`}
                 >
-                  {qty} {qty === 1 ? 'Ticket' : 'Tickets'}
+                  {qty}x
                 </button>
               ))}
             </div>

@@ -464,12 +464,85 @@ export function getExactTimestampMs(item: any): number {
   return 0;
 }
 
+export interface GroupedTicketBatch {
+  groupKey: string;
+  batchId?: string;
+  userId: string;
+  drawId: string;
+  drawTitle: string;
+  category?: string;
+  selectedCar?: SuperCarColor;
+  status: 'active' | 'win' | 'loss' | 'pending';
+  tickets: PurchasedTicket[];
+  quantity: number;
+  totalPrice: number;
+  totalWonAmount: number;
+  purchaseDate: string;
+  purchaseTime?: string;
+  createdAt?: string;
+  firstTicket: PurchasedTicket;
+  slotNum?: number;
+}
+
+/**
+ * Universal Ticket Batching Utility: Groups multiple tickets bought together in a single transaction
+ * so that they display as 1 single entry (e.g. "80x BLACK CAR Tickets - Total ₹8,000") in User and Admin lists.
+ */
+export function groupTicketsByBatch(tickets: PurchasedTicket[]): GroupedTicketBatch[] {
+  if (!tickets || !Array.isArray(tickets)) return [];
+
+  const groupsMap = new Map<string, GroupedTicketBatch>();
+
+  tickets.forEach((t) => {
+    const carStr = t.selectedCar || (t.selectedNumbers && t.selectedNumbers.length > 0 ? t.selectedNumbers.join('-') : '');
+    const dateStr = t.purchaseDate || '';
+    const timeStr = t.purchaseTime || '';
+    const createdMinuteStr = t.createdAt ? t.createdAt.slice(0, 16) : ''; // Group by same minute
+
+    const key = t.batchId || `${t.userId}_${t.drawId}_${carStr}_${dateStr}_${timeStr || createdMinuteStr}`;
+
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        groupKey: key,
+        batchId: t.batchId,
+        userId: t.userId,
+        drawId: t.drawId,
+        drawTitle: t.drawTitle,
+        category: t.category,
+        selectedCar: t.selectedCar,
+        status: (t.status || 'active') as any,
+        tickets: [t],
+        quantity: 1,
+        totalPrice: t.price || 0,
+        totalWonAmount: t.wonAmount || 0,
+        purchaseDate: t.purchaseDate,
+        purchaseTime: t.purchaseTime,
+        createdAt: t.createdAt,
+        firstTicket: t,
+        slotNum: t.slotNum
+      });
+    } else {
+      const existing = groupsMap.get(key)!;
+      existing.tickets.push(t);
+      existing.quantity += 1;
+      existing.totalPrice += (t.price || 0);
+      existing.totalWonAmount += (t.wonAmount || 0);
+
+      if (t.status === 'win') existing.status = 'win';
+      else if (existing.status !== 'win' && t.status === 'loss') existing.status = 'loss';
+    }
+  });
+
+  return Array.from(groupsMap.values());
+}
+
 /**
  * Universal Chronological Sort Utility: Newest (latest) items FIRST at the top
  */
-export function sortChronologicalNewestFirst<T>(items: T[]): T[] {
+export function sortChronologicalNewestFirst<T = any>(items: T[]): T[] {
   if (!items || !Array.isArray(items)) return [];
-  return [...items].sort((a, b) => {
+  const list: T[] = Array.from(items);
+  return list.sort((a: T, b: T) => {
     const timeA = getExactTimestampMs(a);
     const timeB = getExactTimestampMs(b);
     if (timeA !== timeB) {
@@ -480,4 +553,5 @@ export function sortChronologicalNewestFirst<T>(items: T[]): T[] {
     return idB.localeCompare(idA);
   });
 }
+
 

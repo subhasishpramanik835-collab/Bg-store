@@ -150,7 +150,7 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider">
-              2. Select Ticket Quantity
+              2. Select Ticket Quantity (Type or Click)
             </label>
             <span className="text-xs font-mono font-bold text-amber-400">
               ₹{ticketPrice} / ticket
@@ -159,44 +159,62 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
 
           <div className="flex items-center justify-between gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800">
             <button
+              type="button"
               onClick={() => {
                 soundFx.playClick();
                 setQuantity(Math.max(1, quantity - 1));
               }}
-              className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer"
+              className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer shrink-0"
             >
               -
             </button>
-            <span className="text-lg font-black font-mono text-amber-300">
-              {quantity} {quantity === 1 ? 'Ticket' : 'Tickets'}
-            </span>
+
+            <div className="flex items-center justify-center gap-1.5 flex-1">
+              <input
+                type="number"
+                min="1"
+                max="1000"
+                value={quantity || ''}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setQuantity(isNaN(val) ? 1 : Math.max(1, val));
+                }}
+                className="w-20 bg-slate-900 border border-amber-500/50 rounded-xl px-2 py-1 text-center font-mono font-black text-amber-300 text-lg focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+              />
+              <span className="text-xs font-mono font-bold text-slate-400">
+                {quantity === 1 ? 'Ticket' : 'Tickets'}
+              </span>
+            </div>
+
             <button
+              type="button"
               onClick={() => {
                 soundFx.playClick();
                 setQuantity(quantity + 1);
               }}
-              className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer"
+              className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-lg flex items-center justify-center transition-colors cursor-pointer shrink-0"
             >
               +
             </button>
           </div>
 
           {/* Quick Quantity Buttons */}
-          <div className="flex items-center gap-1.5 pt-1">
-            {[1, 2, 5, 10, 20].map((num) => (
+          <div className="grid grid-cols-6 gap-1.5 pt-1">
+            {[1, 5, 10, 50, 80, 100].map((num) => (
               <button
                 key={num}
+                type="button"
                 onClick={() => {
                   soundFx.playClick();
                   setQuantity(num);
                 }}
-                className={`flex-1 py-1 rounded-xl text-[11px] font-mono font-bold border transition-colors cursor-pointer ${
+                className={`py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-colors cursor-pointer text-center ${
                   quantity === num
-                    ? 'bg-amber-500 text-slate-950 border-amber-400'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md'
                     : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border-slate-700'
                 }`}
               >
-                x{num}
+                {num}x
               </button>
             ))}
           </div>

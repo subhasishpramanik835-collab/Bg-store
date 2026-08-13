@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle, Dices } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
-import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction } from '../../types';
+import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction, BannerSlide } from '../../types';
 import { soundFx } from '../../utils/audio';
 import { sortChronologicalNewestFirst } from '../../utils/supercar';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -12,6 +12,8 @@ import { SuperCarDrawAnalytics } from './SuperCarDrawAnalytics';
 import { AdminBroadcastManager } from './AdminBroadcastManager';
 import { AdminSmtpManager } from './AdminSmtpManager';
 import { AdminSchedulerManager } from './AdminSchedulerManager';
+import { AdminBannerSliderManager } from './AdminBannerSliderManager';
+import { AdminWheelManager } from './AdminWheelManager';
 import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
@@ -21,6 +23,7 @@ interface AdminDashboardProps {
   tickets: PurchasedTicket[];
   user: User;
   transactions: WalletTransaction[];
+  bannerSlides?: BannerSlide[];
   hasAdminClaim?: boolean;
   onApproveDeposit: (depositId: string) => void;
   onRejectDeposit: (depositId: string, reason: string) => void;
@@ -31,6 +34,7 @@ interface AdminDashboardProps {
   onUpdateUserBonusBalance?: (newBonusBalance: number) => void;
   onToggleUserStatus: () => void;
   onAddTransaction?: (tx: WalletTransaction) => void;
+  onBannerSlidesUpdated?: () => void;
 }
 
 const ANALYTICS_DATA = [
@@ -50,6 +54,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   tickets,
   user,
   transactions,
+  bannerSlides,
   hasAdminClaim,
   onApproveDeposit,
   onRejectDeposit,
@@ -59,7 +64,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateUserBalance,
   onUpdateUserBonusBalance,
   onToggleUserStatus,
-  onAddTransaction
+  onAddTransaction,
+  onBannerSlidesUpdated
 }) => {
   const isVerifiedAdmin = hasAdminClaim ?? (user.role === 'admin');
 
@@ -70,7 +76,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'wheel' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
   const [supercarConfig, setSupercarConfig] = useState<any>({
     enabled: true,
     ticketPrice: 100,
@@ -204,13 +210,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const usersRef = collection(db, 'users');
       unsubscribe = onSnapshot(usersRef, (snapshot) => {
-        const fetched: User[] = [];
+        const rawList: (User & { docId: string })[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as any;
-          fetched.push({
+          rawList.push({
+            docId: docSnap.id,
             id: docSnap.id,
             name: data.name || 'BETGURU Player',
-            email: data.email || 'N/A',
+            email: (data.email || '').toLowerCase().trim(),
             phone: data.phone || 'N/A',
             avatarUrl: data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
             balance: typeof data.balance === 'number' ? data.balance : 0,
@@ -230,7 +237,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             suspiciousDate: data.suspiciousDate || ''
           });
         });
-        setAllUsers(fetched);
+
+        // Group & Deduplicate by Email to resolve multi-doc ID discrepancies
+        const emailMap: { [email: string]: (User & { docId: string })[] } = {};
+        rawList.forEach((u) => {
+          const key = u.email ? u.email.toLowerCase().trim() : u.id;
+          if (!emailMap[key]) emailMap[key] = [];
+          emailMap[key].push(u);
+        });
+
+        const deduplicatedUsers: User[] = [];
+
+        Object.entries(emailMap).forEach(([_, userGroup]) => {
+          if (userGroup.length === 1) {
+            const singleUser = userGroup[0];
+            deduplicatedUsers.push({
+              ...singleUser,
+              linkedDocIds: [singleUser.docId]
+            });
+          } else {
+            // Multiple Firestore records exist for the same email
+            let maxBal = 0;
+            let maxBonus = 0;
+            let maxWon = 0;
+            let maxSpent = 0;
+            let canonicalUser = userGroup[0];
+            const linkedIds: string[] = [];
+
+            userGroup.forEach((u) => {
+              linkedIds.push(u.docId);
+              if (u.balance > maxBal) maxBal = u.balance;
+              if ((u.bonusBalance || 0) > maxBonus) maxBonus = u.bonusBalance || 0;
+              if (u.totalWon > maxWon) maxWon = u.totalWon;
+              if (u.totalSpent > maxSpent) maxSpent = u.totalSpent;
+
+              if (u.docId.startsWith('user_') || u.role === 'admin') {
+                canonicalUser = u;
+              }
+            });
+
+            // Automatically sync all duplicate docs in Firestore to max balance in background
+            userGroup.forEach((u) => {
+              if (u.balance !== maxBal || u.bonusBalance !== maxBonus) {
+                setDoc(doc(db, 'users', u.docId), {
+                  balance: maxBal,
+                  bonusBalance: maxBonus
+                }, { merge: true }).catch(() => {});
+              }
+            });
+
+            deduplicatedUsers.push({
+              ...canonicalUser,
+              balance: maxBal,
+              bonusBalance: maxBonus,
+              totalWon: maxWon,
+              totalSpent: maxSpent,
+              linkedDocIds: linkedIds
+            });
+          }
+        });
+
+        setAllUsers(deduplicatedUsers);
         setLoadingUsers(false);
       }, (err) => {
         console.warn('Firestore users listener notice:', err.message);
@@ -246,25 +313,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   }, []);
 
-  // Sync initial editing balances when allUsers loads
+  // Sync initial editing balances when allUsers loads or updates
   useEffect(() => {
-    const balMap: { [userId: string]: string } = {};
-    const bonusMap: { [userId: string]: string } = {};
-    allUsers.forEach((u) => {
-      balMap[u.id] = (editingBalances[u.id] !== undefined) ? editingBalances[u.id] : u.balance.toString();
-      bonusMap[u.id] = (editingBonusBalances[u.id] !== undefined) ? editingBonusBalances[u.id] : (u.bonusBalance || 0).toString();
+    // Keep editing maps updated with latest real-time values unless actively being typed
+    setEditingBalances((prev) => {
+      const next = { ...prev };
+      allUsers.forEach((u) => {
+        if (next[u.id] === undefined) {
+          next[u.id] = u.balance.toString();
+        }
+      });
+      return next;
     });
-    setEditingBalances(balMap);
-    setEditingBonusBalances(bonusMap);
-  }, [allUsers.length]);
+    setEditingBonusBalances((prev) => {
+      const next = { ...prev };
+      allUsers.forEach((u) => {
+        if (next[u.id] === undefined) {
+          next[u.id] = (u.bonusBalance || 0).toString();
+        }
+      });
+      return next;
+    });
+  }, [allUsers]);
 
   // Target User Wallet Modifiers
   const handleUpdateTargetUserMainBalance = async (targetUser: User, newBal: number, note?: string) => {
     executeSensitiveAdminAction(async () => {
       try {
-        await setDoc(doc(db, 'users', targetUser.id), { balance: newBal }, { merge: true });
+        const docIdsToUpdate = targetUser.linkedDocIds && targetUser.linkedDocIds.length > 0 ? targetUser.linkedDocIds : [targetUser.id];
+        await Promise.all(docIdsToUpdate.map((dId) => setDoc(doc(db, 'users', dId), { balance: newBal }, { merge: true })));
         logAuditTx('Main', 'set', 0, newBal, note || `Admin set ${targetUser.name}'s balance`);
-        if (targetUser.id === user.id) {
+        
+        // Optimistically update allUsers state & clear override
+        setAllUsers((prev) => prev.map((u) => (u.email === targetUser.email || u.id === targetUser.id ? { ...u, balance: newBal } : u)));
+        setEditingBalances((prev) => {
+          const next = { ...prev };
+          delete next[targetUser.id];
+          return next;
+        });
+
+        if (targetUser.id === user.id || docIdsToUpdate.includes(user.id)) {
           onUpdateUserBalance(newBal);
         }
         soundFx.playCoin();
@@ -277,9 +365,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleUpdateTargetUserBonusBalance = async (targetUser: User, newBonus: number, note?: string) => {
     executeSensitiveAdminAction(async () => {
       try {
-        await setDoc(doc(db, 'users', targetUser.id), { bonusBalance: newBonus }, { merge: true });
+        const docIdsToUpdate = targetUser.linkedDocIds && targetUser.linkedDocIds.length > 0 ? targetUser.linkedDocIds : [targetUser.id];
+        await Promise.all(docIdsToUpdate.map((dId) => setDoc(doc(db, 'users', dId), { bonusBalance: newBonus }, { merge: true })));
         logAuditTx('Bonus', 'set', 0, newBonus, note || `Admin set ${targetUser.name}'s bonus`);
-        if (targetUser.id === user.id && onUpdateUserBonusBalance) {
+        
+        // Optimistically update allUsers state & clear override
+        setAllUsers((prev) => prev.map((u) => (u.email === targetUser.email || u.id === targetUser.id ? { ...u, bonusBalance: newBonus } : u)));
+        setEditingBonusBalances((prev) => {
+          const next = { ...prev };
+          delete next[targetUser.id];
+          return next;
+        });
+
+        if ((targetUser.id === user.id || docIdsToUpdate.includes(user.id)) && onUpdateUserBonusBalance) {
           onUpdateUserBonusBalance(newBonus);
         }
         soundFx.playCoin();
@@ -293,8 +391,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     executeSensitiveAdminAction(async () => {
       try {
         const newStatus = targetUser.status === 'active' ? 'suspended' : 'active';
-        await setDoc(doc(db, 'users', targetUser.id), { status: newStatus }, { merge: true });
-        if (targetUser.id === user.id) {
+        const docIdsToUpdate = targetUser.linkedDocIds && targetUser.linkedDocIds.length > 0 ? targetUser.linkedDocIds : [targetUser.id];
+        await Promise.all(docIdsToUpdate.map((dId) => setDoc(doc(db, 'users', dId), { status: newStatus }, { merge: true })));
+        if (targetUser.id === user.id || docIdsToUpdate.includes(user.id)) {
           onToggleUserStatus();
         }
         soundFx.playClick();
@@ -308,7 +407,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     executeSensitiveAdminAction(async () => {
       try {
         const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
-        await setDoc(doc(db, 'users', targetUser.id), { role: newRole }, { merge: true });
+        const docIdsToUpdate = targetUser.linkedDocIds && targetUser.linkedDocIds.length > 0 ? targetUser.linkedDocIds : [targetUser.id];
+        await Promise.all(docIdsToUpdate.map((dId) => setDoc(doc(db, 'users', dId), { role: newRole }, { merge: true })));
         soundFx.playClick();
       } catch (e) {
         console.error('Error toggling target user role:', e);
@@ -470,7 +570,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'overview', label: 'Dashboard', icon: Activity },
             { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
             { id: 'payment', label: 'Payment Settings', icon: QrCode },
+            { id: 'wheel', label: 'Lucky Wheel', icon: Dices },
             { id: 'supercar', label: 'Super Car Draw', icon: Sparkles },
+            { id: 'banners', label: 'Banner Sliders', icon: ImageIcon },
             { id: 'broadcast', label: 'Broadcast Center', icon: Bell },
             { id: 'smtp', label: 'Gmail SMTP', icon: Mail },
             { id: 'deposits', label: 'Deposits', count: pendingDepositsCount, icon: ArrowDownCircle },
@@ -883,12 +985,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* LUCKY WHEEL MANAGER */}
+      {adminTab === 'wheel' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminWheelManager users={allUsers} />
+        </div>
+      )}
+
       {/* SUPER CAR MANAGER (LIVE SALES MONITOR, RECHARTS, SETTINGS) */}
       {adminTab === 'supercar' && (
         <div className="animate-in fade-in duration-200">
           <AdminSuperCarManager
             config={supercarConfig}
             onUpdateConfig={handleUpdateSupercarConfig}
+          />
+        </div>
+      )}
+
+      {/* BANNER SLIDERS MANAGER */}
+      {adminTab === 'banners' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminBannerSliderManager
+            slides={bannerSlides || []}
+            onSlidesUpdated={onBannerSlidesUpdated}
           />
         </div>
       )}
@@ -1469,8 +1588,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 })
                 .slice((userPage - 1) * userPageSize, userPage * userPageSize)
                 .map((u) => {
-                  const currentMainEdit = editingBalances[u.id] !== undefined ? editingBalances[u.id] : u.balance.toString();
-                  const currentBonusEdit = editingBonusBalances[u.id] !== undefined ? editingBonusBalances[u.id] : (u.bonusBalance || 0).toString();
+                  const currentMainEdit = editingBalances[u.id] ?? u.balance.toString();
+                  const currentBonusEdit = editingBonusBalances[u.id] ?? (u.bonusBalance || 0).toString();
 
                   return (
                     <div
@@ -2219,73 +2338,119 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Financial Transactions List (Deposits & Withdrawals) */}
+                  {/* Financial Transactions List (Complete Unified Ledger: Bets, Wins, Losses, Deposits, Withdrawals) */}
                   <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 font-mono">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-white flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-emerald-400" />
-                        <span>Real-Time Financial Transactions History</span>
+                        <span>Real-Time Player Wallet Ledger & Activity History</span>
                       </span>
                       <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
                         Firestore Live Feed
                       </span>
                     </div>
 
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                      {[
-                        ...deposits.filter(d => d.userId === selectedUserForModal.id).map(d => ({
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {(() => {
+                        const targetUserDocIds = selectedUserForModal.linkedDocIds && selectedUserForModal.linkedDocIds.length > 0
+                          ? selectedUserForModal.linkedDocIds
+                          : [selectedUserForModal.id];
+
+                        const isMatchUser = (uId: string) => targetUserDocIds.includes(uId);
+
+                        const userGeneralTxs = transactions.filter(t => isMatchUser(t.userId)).map(t => ({
+                          id: t.id,
+                          type: (t.type || 'TXN').toString().toUpperCase().replace(/_/g, ' '),
+                          amount: Math.abs(t.amount),
+                          status: t.status || 'completed',
+                          details: t.description || 'Wallet activity',
+                          date: t.date || 'Real-Time',
+                          isCredit: t.amount > 0,
+                          isLoss: t.type === 'ticket_loss' || t.type === 'loss'
+                        }));
+
+                        const userDeposits = deposits.filter(d => isMatchUser(d.userId)).map(d => ({
                           id: d.id,
                           type: 'DEPOSIT',
                           amount: d.amount,
                           status: d.status,
                           details: `Method: ${(d.method || 'UPI').toString().toUpperCase()} | UTR: ${d.utr || 'N/A'}`,
                           date: d.date || 'Real-Time',
-                          isCredit: true
-                        })),
-                        ...withdrawals.filter(w => w.userId === selectedUserForModal.id).map(w => ({
+                          isCredit: true,
+                          isLoss: false
+                        }));
+
+                        const userWithdrawals = withdrawals.filter(w => isMatchUser(w.userId)).map(w => ({
                           id: w.id,
                           type: 'WITHDRAWAL',
                           amount: w.amount,
                           status: w.status,
                           details: `A/C: ${w.accountNumber || w.upiId || 'N/A'} | Holder: ${w.fullName || 'User'}`,
                           date: w.date || 'Real-Time',
-                          isCredit: false
-                        }))
-                      ].sort((a, b) => (b.id > a.id ? 1 : -1)).map((tx) => (
-                        <div key={tx.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase border ${
-                                tx.isCredit ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-rose-950 text-rose-300 border-rose-800'
-                              }`}>
-                                {tx.type}
-                              </span>
-                              <span className="font-bold text-white">{tx.id}</span>
-                            </div>
-                            <p className="text-[10px] text-slate-400">{tx.details}</p>
-                          </div>
+                          isCredit: false,
+                          isLoss: false
+                        }));
 
-                          <div className="text-right shrink-0">
-                            <span className={`text-sm font-black block ${tx.isCredit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {tx.isCredit ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
-                            </span>
-                            <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
-                                tx.status === 'approved' ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : tx.status === 'pending' ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse' : 'bg-rose-950 text-rose-300 border-rose-800'
+                        // Deduplicate entries by ID
+                        const combinedMap = new Map<string, any>();
+                        [...userGeneralTxs, ...userDeposits, ...userWithdrawals].forEach(item => {
+                          combinedMap.set(item.id, item);
+                        });
+
+                        const unifiedList = Array.from(combinedMap.values()).sort((a, b) => (b.id > a.id ? 1 : -1));
+
+                        if (unifiedList.length === 0) {
+                          return (
+                            <div className="p-4 text-center text-slate-500 text-xs font-bold bg-slate-900/60 rounded-xl">
+                              No wallet transactions, tickets, or deposit/withdrawal records found for this player.
+                            </div>
+                          );
+                        }
+
+                        return unifiedList.map((tx) => (
+                          <div key={tx.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between text-xs hover:border-amber-500/30 transition-all">
+                            <div className="space-y-0.5 max-w-[65%]">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase border ${
+                                  tx.isLoss
+                                    ? 'bg-rose-950/80 text-rose-300 border-rose-800/80'
+                                    : tx.isCredit
+                                    ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                                }`}>
+                                  {tx.type}
+                                </span>
+                                <span className="font-bold text-white truncate text-[11px]">{tx.id}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-300 truncate">{tx.details}</p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className={`text-sm font-black block font-mono ${
+                                tx.isLoss
+                                  ? 'text-rose-400'
+                                  : tx.isCredit
+                                  ? 'text-emerald-400'
+                                  : 'text-amber-300'
                               }`}>
-                                {tx.status}
+                                {tx.isLoss ? 'LOSS (₹0)' : tx.isCredit ? `+₹${tx.amount.toLocaleString('en-IN')}` : `-₹${tx.amount.toLocaleString('en-IN')}`}
                               </span>
-                              <span className="text-[9px] text-slate-500">{tx.date}</span>
+                              <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
+                                  tx.status === 'approved' || tx.status === 'completed'
+                                    ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                                    : tx.status === 'pending'
+                                    ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse'
+                                    : 'bg-rose-950 text-rose-300 border-rose-800'
+                                }`}>
+                                  {tx.status}
+                                </span>
+                                <span className="text-[9px] text-slate-500">{tx.date}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-
-                      {deposits.filter(d => d.userId === selectedUserForModal.id).length === 0 && withdrawals.filter(w => w.userId === selectedUserForModal.id).length === 0 && (
-                        <div className="p-4 text-center text-slate-500 text-xs font-bold bg-slate-900/60 rounded-xl">
-                          No financial deposit or withdrawal records found for this player.
-                        </div>
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
                 </div>

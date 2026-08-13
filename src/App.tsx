@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Trophy, Wallet, Dices, Plus, ArrowUpRight, ShieldCheck, ShieldAlert, Flame, Star, CheckCircle2, Disc, Play } from 'lucide-react';
-import { User, LotteryDraw, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, NotificationItem, PaymentMethodType, UserSettings } from './types';
+import { User, LotteryDraw, DepositRequest, WithdrawalRequest, PurchasedTicket, WalletTransaction, NotificationItem, PaymentMethodType, UserSettings, BannerSlide } from './types';
 import { loadState, saveState } from './utils/storage';
 import { soundFx } from './utils/audio';
 import { Header } from './components/Header';
@@ -28,12 +28,13 @@ import { LotterySection } from './components/LotterySection';
 import { WithdrawalSection } from './components/WithdrawalSection';
 import { SuperCarDrawSection } from './components/SuperCarDrawSection';
 import { CompactUserDashboardCard } from './components/CompactUserDashboardCard';
+import { PromotionalSlider } from './components/PromotionalSlider';
 import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
 import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor } from './types';
 import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo, getCurrentSuperCarSchedule, getSlotFromTicket, getWinningCarForSlot, sortChronologicalNewestFirst } from './utils/supercar';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { logAnalyticsEvent } from './utils/analytics';
 import confetti from 'canvas-confetti';
 import { 
@@ -56,6 +57,7 @@ export default function App() {
   const [tickets, setTickets] = useState<PurchasedTicket[]>(initialState.tickets);
   const [transactions, setTransactions] = useState<WalletTransaction[]>(initialState.transactions);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialState.notifications);
+  const [bannerSlides, setBannerSlides] = useState<BannerSlide[]>([]);
 
   // Navigation & Modals UI state
   const [activeTab, setActiveTab] = useState<NavTab | 'settings'>('home');
@@ -88,14 +90,36 @@ export default function App() {
   const [userHasAdminClaim, setUserHasAdminClaim] = useState<boolean>(false);
 
   // Firestore Persistence Helpers
-  const persistUserBalance = async (userId: string, newBalance: number, newBonusBalance?: number) => {
+  const persistUserBalance = async (userId: string, newBalance: number, newBonusBalance?: number, userEmail?: string) => {
     try {
-      const userRef = doc(db, 'users', userId);
       const updateData: any = { balance: newBalance };
       if (typeof newBonusBalance === 'number') {
         updateData.bonusBalance = newBonusBalance;
       }
+
+      // 1. Primary Doc Update
+      const userRef = doc(db, 'users', userId);
       await setDoc(userRef, updateData, { merge: true });
+
+      // 2. Email & Alias Multi-Doc Sync
+      const emailToUse = (userEmail || user?.email || '').toLowerCase().trim();
+      if (emailToUse) {
+        const aliasId = `user_${emailToUse.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        if (aliasId !== userId) {
+          await setDoc(doc(db, 'users', aliasId), updateData, { merge: true }).catch(() => {});
+        }
+
+        // Query all user documents matching this email to ensure 100% real-time balance parity
+        try {
+          const qByEmail = query(collection(db, 'users'), where('email', '==', emailToUse));
+          const emailSnap = await getDocs(qByEmail);
+          emailSnap.forEach((dSnap) => {
+            if (dSnap.id !== userId && dSnap.id !== aliasId) {
+              setDoc(doc(db, 'users', dSnap.id), updateData, { merge: true }).catch(() => {});
+            }
+          });
+        } catch (_) {}
+      }
     } catch (err) {
       console.error('Error persisting balance to Firestore:', err);
     }
@@ -187,6 +211,8 @@ export default function App() {
 
       // 1. Real-time user profile & balance listener
       const userRef = doc(db, 'users', activeUid);
+      let unsubUserAlias: (() => void) | null = null;
+
       unsubUser = onSnapshot(userRef, (docSnap) => {
         if (docSnap.exists()) {
           const uData = docSnap.data() as User;
@@ -196,6 +222,25 @@ export default function App() {
             balance: typeof uData.balance === 'number' ? uData.balance : (prev?.balance ?? 100),
             bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : (prev?.bonusBalance ?? 100)
           }));
+
+          // Deduplicate/sync by email if alias doc exists
+          if (uData.email) {
+            const emailClean = uData.email.toLowerCase().trim();
+            const aliasId = `user_${emailClean.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            if (aliasId !== activeUid && !unsubUserAlias) {
+              unsubUserAlias = onSnapshot(doc(db, 'users', aliasId), (aliasSnap) => {
+                if (aliasSnap.exists()) {
+                  const aData = aliasSnap.data() as User;
+                  if (typeof aData.balance === 'number' && aData.balance !== uData.balance) {
+                    const higherBal = Math.max(aData.balance, uData.balance);
+                    setUser((prev) => ({ ...prev, balance: higherBal }));
+                    setDoc(userRef, { balance: higherBal }, { merge: true }).catch(() => {});
+                    setDoc(doc(db, 'users', aliasId), { balance: higherBal }, { merge: true }).catch(() => {});
+                  }
+                }
+              });
+            }
+          }
         }
       }, (err) => console.warn('Real-time user snapshot notice:', err.message));
 
@@ -502,6 +547,37 @@ export default function App() {
     }
   };
 
+  // Banner Sliders Listener
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'banner_sliders'), (snap) => {
+      const list: BannerSlide[] = [];
+      snap.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as BannerSlide);
+      });
+      list.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+      setBannerSlides(list);
+    }, (err) => console.warn('Banner sliders snapshot notice:', err.message));
+    return () => unsub();
+  }, []);
+
+  const handleBannerSliderAction = (actionType: string, targetUrl?: string) => {
+    if (actionType === 'deposit') {
+      setIsDepositOpen(true);
+    } else if (actionType === 'supercar') {
+      setActiveTab('home');
+    } else if (actionType === 'lottery') {
+      setActiveTab('lottery');
+    } else if (actionType === 'wheel') {
+      setIsLuckyWheelOpen(true);
+    } else if (actionType === 'roulette') {
+      setIsLiveRouletteOpen(true);
+    } else if (actionType === 'withdrawal') {
+      setActiveTab('withdrawal');
+    } else if (actionType === 'custom_url' && targetUrl) {
+      window.open(targetUrl, '_blank');
+    }
+  };
+
   // Save to LocalStorage whenever state changes
   useEffect(() => {
     saveState({ user, draws, deposits, withdrawals, tickets, transactions, notifications });
@@ -611,6 +687,7 @@ export default function App() {
     const slotTimeLabel = `${String(formattedH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 
     const exactTimeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    const batchId = `BATCH-SC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newTickets: PurchasedTicket[] = [];
     const pricePerTicket = quantity > 0 ? Math.round(totalCost / quantity) : (supercarConfig.ticketPrice || 100);
 
@@ -618,6 +695,7 @@ export default function App() {
       const ticketNum = `CAR-${carColor.toUpperCase()}-${Math.floor(10000 + Math.random() * 90000)}`;
       const newTicket: PurchasedTicket = {
         id: `TKT-SC-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
+        batchId: batchId,
         userId: currentUserId,
         drawId: activeIssueId,
         drawTitle: `3 Super Car Draw - ${carColor.toUpperCase()} CAR (Slot #${String(activeSlot).padStart(2, '0')} - ${slotTimeLabel})`,
@@ -709,13 +787,6 @@ export default function App() {
       };
       setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
       persistTransaction(winTx);
-
-      setSuperCarWinToast({
-        id: `sc-toast-manual-${Date.now()}`,
-        winningCar,
-        amountWon: totalWonAmount,
-        issueId
-      });
     }
 
     try {
@@ -824,50 +895,12 @@ export default function App() {
             soundFx.playWinFanfare();
             triggerConfetti();
           } catch (_) {}
-
-          setSuperCarWinToast({
-            id: `sc-toast-auto-${Date.now()}`,
-            winningCar: lastWonCar,
-            amountWon: totalNewWonAmount,
-            issueId: 'Auto Payout'
-          });
         }
       }
     }, 2000);
 
     return () => clearInterval(interval);
   }, [tickets, supercarPastDraws, supercarConfig, user.id]);
-
-  // Automated Real-time SuperCar Win Toast Detector for user tickets
-  useEffect(() => {
-    if (!tickets || tickets.length === 0) return;
-
-    const winningSuperCarTickets = tickets.filter(
-      (t) => t.category === 'Three Super Car Draw' && t.status === 'win' && (t.winAmount || 0) > 0
-    );
-
-    for (const t of winningSuperCarTickets) {
-      if (!notifiedWinTicketIdsRef.current.has(t.id)) {
-        notifiedWinTicketIdsRef.current.add(t.id);
-        const winningCar = (t.selectedCar || (t.selectedNumbers?.[0]?.toLowerCase() as SuperCarColor) || 'red') as SuperCarColor;
-        const amountWon = t.winAmount || Math.round((t.price || 100) * (supercarConfig.prizeMultiplier || 2.8));
-
-        setSuperCarWinToast({
-          id: `sc-toast-auto-${t.id}`,
-          winningCar,
-          amountWon,
-          issueId: t.drawId
-        });
-        try {
-          soundFx.playWinFanfare();
-        } catch (e) {
-          console.warn('Audio play notice:', e);
-        }
-        triggerConfetti();
-        break;
-      }
-    }
-  }, [tickets, supercarPastDraws, supercarConfig]);
 
   // Audio mute toggle
   const handleToggleMute = () => {
@@ -1049,14 +1082,21 @@ export default function App() {
       const targetUserRef = doc(db, 'users', dep.userId);
       const targetSnap = await getDoc(targetUserRef);
       let targetUserBal = 0;
+      let targetSpinCredits = 0;
       if (targetSnap.exists()) {
         const uData = targetSnap.data();
         targetUserBal = typeof uData?.balance === 'number' ? uData.balance : 0;
+        targetSpinCredits = typeof uData?.spinCredits === 'number' ? uData.spinCredits : 0;
       }
       const newBal = targetUserBal + dep.amount;
+      const spinsEarned = dep.amount >= 1000 ? Math.floor(dep.amount / 1000) : 0;
+      const newSpinCredits = targetSpinCredits + spinsEarned;
 
-      // Update the target user's balance in Firestore
-      await persistUserBalance(dep.userId, newBal);
+      // Update the target user's balance and spin credits in Firestore
+      await setDoc(doc(db, 'users', dep.userId), {
+        balance: newBal,
+        spinCredits: newSpinCredits
+      }, { merge: true });
 
       // Dispatch real-time email notification
       const targetUserEmail = targetSnap.exists() ? (targetSnap.data()?.email || dep.userName) : user.email;
@@ -1069,7 +1109,8 @@ export default function App() {
       if (user.id === dep.userId) {
         setUser((prev) => ({
           ...prev,
-          balance: newBal
+          balance: newBal,
+          spinCredits: (prev.spinCredits || 0) + spinsEarned
         }));
       }
     } catch (err) {
@@ -1337,8 +1378,10 @@ export default function App() {
     if (user?.id) persistUserBalance(user.id, newBal);
 
     // Create tickets
+    const batchId = `BATCH-LOTTERY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newTickets: PurchasedTicket[] = ticketDigitsArray.map((digits) => ({
       id: `TCK-${Math.floor(100000 + Math.random() * 900000)}`,
+      batchId: batchId,
       userId: user.id,
       drawId: draw.id,
       drawTitle: draw.title,
@@ -1417,12 +1460,23 @@ export default function App() {
   // Handle Claim Spin Reward
   const handleClaimWheelReward = (rewardAmount: number) => {
     const newBal = user.balance + rewardAmount;
+    const currentCredits = user.spinCredits ?? 0;
+    const newCredits = Math.max(0, currentCredits - 1);
+
     setUser((prev) => ({
       ...prev,
       balance: newBal,
+      spinCredits: newCredits,
       lastSpinTime: Date.now()
     }));
-    if (user?.id) persistUserBalance(user.id, newBal);
+
+    if (user?.id) {
+      setDoc(doc(db, 'users', user.id), {
+        balance: newBal,
+        spinCredits: newCredits,
+        lastSpinTime: Date.now()
+      }, { merge: true }).catch((err) => console.warn('Persist spin credit error:', err));
+    }
 
     notifyBonusCredited(user.email, user.name, rewardAmount, 'Daily Lucky Spin Wheel Bonus').catch((err) =>
       console.warn('Wheel bonus email error:', err)
@@ -1530,6 +1584,7 @@ export default function App() {
               tickets={tickets}
               user={user}
               transactions={transactions}
+              bannerSlides={bannerSlides}
               hasAdminClaim={userHasAdminClaim}
               onApproveDeposit={handleAdminApproveDeposit}
               onRejectDeposit={handleAdminRejectDeposit}
@@ -1576,16 +1631,10 @@ export default function App() {
             {activeTab === 'home' && (
               <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-4 sm:space-y-5 pb-28">
                 
-                {/* COMBINED 3-SECTION COMPACT USER DASHBOARD CARD */}
-                <CompactUserDashboardCard
-                  user={user}
-                  activeTicketsCount={activeTicketsCount}
-                  onOpenDeposit={() => setIsDepositOpen(true)}
-                  onOpenWithdraw={() => setActiveTab('withdrawal')}
-                  onOpenRoulette={() => setIsLiveRouletteOpen(true)}
-                  onOpenLuckyWheel={() => setIsLuckyWheelOpen(true)}
-                  onOpenMyTickets={() => setActiveTab('tickets')}
-                  onOpenResults={() => setActiveTab('results')}
+                {/* PROMOTIONAL BANNER SLIDER (Replaces old compact dashboard card) */}
+                <PromotionalSlider
+                  slides={bannerSlides}
+                  onAction={handleBannerSliderAction}
                 />
 
                 {/* Three Super Car Draw Live Section */}
@@ -1612,6 +1661,7 @@ export default function App() {
 
             {activeTab === 'lottery' && (
               <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 pb-28">
+                <PromotionalSlider slides={bannerSlides} category="lottery" onAction={handleBannerSliderAction} />
                 {isSuperCarEnabled && (
                   <SuperCarDrawSection
                     userBalance={user.balance}
@@ -1765,16 +1815,11 @@ export default function App() {
         isOpen={isLuckyWheelOpen}
         onClose={() => setIsLuckyWheelOpen(false)}
         onClaimReward={handleClaimWheelReward}
-        lastSpinTime={user.lastSpinTime}
+        userSpinCredits={user.spinCredits || 0}
+        onOpenDeposit={() => setIsDepositOpen(true)}
       />
 
-      {/* Automated High-Visibility SuperCar Draw Win Toast */}
-      <SuperCarWinToast
-        toast={superCarWinToast}
-        config={supercarConfig}
-        onClose={() => setSuperCarWinToast(null)}
-        onViewTickets={() => setActiveTab('tickets')}
-      />
+
 
     </div>
   );

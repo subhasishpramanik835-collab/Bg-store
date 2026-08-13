@@ -10,7 +10,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, collection, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, storage } from '../../firebase';
 import { SuperCarConfig, SuperCarColor, PurchasedTicket, User } from '../../types';
-import { getSuperCarInfo, formatTicketExactTime, formatTicketExactDateTime, sortChronologicalNewestFirst } from '../../utils/supercar';
+import { getSuperCarInfo, formatTicketExactTime, formatTicketExactDateTime, sortChronologicalNewestFirst, groupTicketsByBatch, GroupedTicketBatch } from '../../utils/supercar';
 import { soundFx } from '../../utils/audio';
 import { PaginationBar } from '../PaginationBar';
 
@@ -428,13 +428,93 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
         setStatusMessage({ type: 'success', text: `✓ Ticket #${ticket.ticketNumber || ticket.id} set to WIN! Credited ₹${payoutAmount.toLocaleString('en-IN')} to player balance.` });
       } else if (targetStatus === 'loss') {
         soundFx.playClick();
-        setStatusMessage({ type: 'success', text: `⊘ Ticket #${ticket.ticketNumber || ticket.id} set to LOSS.` });
+        const txId = `TXN-MANUAL-LOSS-${Date.now()}`;
+        await setDoc(doc(db, 'transactions', txId), {
+          id: txId,
+          userId: ticket.userId,
+          type: 'ticket_loss',
+          amount: 0,
+          description: `❌ Admin Marked Loss: Ticket #${ticket.ticketNumber || ticket.id} (${carChoice.toUpperCase()} CAR)`,
+          status: 'completed',
+          date: new Date().toLocaleString('en-IN'),
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+        setStatusMessage({ type: 'success', text: `⊘ Ticket #${ticket.ticketNumber || ticket.id} set to LOSS & recorded in transactions ledger.` });
       } else {
         soundFx.playClick();
         setStatusMessage({ type: 'success', text: `↺ Ticket #${ticket.ticketNumber || ticket.id} reset to ACTIVE.` });
       }
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: `Failed to update ticket: ${err.message}` });
+    } finally {
+      setSettlingTicketId(null);
+    }
+  };
+
+  // Manual Win/Loss Settlement Control for Batch of Tickets
+  const handleManualSettleBatch = async (batch: GroupedTicketBatch, targetStatus: 'win' | 'loss' | 'active') => {
+    setSettlingTicketId(batch.groupKey);
+    try {
+      const carChoice = (batch.selectedCar || 'red').toLowerCase() as SuperCarColor;
+      const multiplier = config.carMultipliers?.[carChoice] || config.prizeMultiplier || 2.8;
+
+      let totalPayoutForBatch = 0;
+
+      for (const t of batch.tickets) {
+        const payout = targetStatus === 'win' ? Math.round((t.price || 100) * multiplier) : 0;
+        totalPayoutForBatch += payout;
+
+        await setDoc(doc(db, 'tickets', t.id), {
+          status: targetStatus,
+          wonAmount: payout,
+          updatedByAdminAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      if (targetStatus === 'win' && totalPayoutForBatch > 0) {
+        soundFx.playWinFanfare();
+        const userRef = doc(db, 'users', batch.userId);
+        const uSnap = await getDoc(userRef);
+        if (uSnap.exists()) {
+          const uData = uSnap.data();
+          const currentBal = uData.balance || 0;
+          const currentWon = uData.totalWon || 0;
+          await setDoc(userRef, {
+            balance: currentBal + totalPayoutForBatch,
+            totalWon: currentWon + totalPayoutForBatch
+          }, { merge: true });
+
+          const txId = `TXN-MANUAL-WIN-${Date.now()}`;
+          await setDoc(doc(db, 'transactions', txId), {
+            id: txId,
+            userId: batch.userId,
+            type: 'win',
+            amount: totalPayoutForBatch,
+            description: `Admin Manual Win Payout: ${batch.quantity}x Tickets (${carChoice.toUpperCase()} CAR)`,
+            date: new Date().toLocaleString()
+          }, { merge: true });
+        }
+        setStatusMessage({ type: 'success', text: `✓ Batch of ${batch.quantity} tickets set to WIN! Credited ₹${totalPayoutForBatch.toLocaleString('en-IN')} to player balance.` });
+      } else if (targetStatus === 'loss') {
+        soundFx.playClick();
+        const txId = `TXN-MANUAL-LOSS-${Date.now()}`;
+        await setDoc(doc(db, 'transactions', txId), {
+          id: txId,
+          userId: batch.userId,
+          type: 'ticket_loss',
+          amount: 0,
+          description: `❌ Admin Marked Loss: ${batch.quantity}x Tickets (${carChoice.toUpperCase()} CAR)`,
+          status: 'completed',
+          date: new Date().toLocaleString('en-IN'),
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+        setStatusMessage({ type: 'success', text: `⊘ Batch of ${batch.quantity} tickets set to LOSS.` });
+      } else {
+        soundFx.playClick();
+        setStatusMessage({ type: 'success', text: `↺ Batch of ${batch.quantity} tickets reset to ACTIVE.` });
+      }
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: `Failed to update ticket batch: ${err.message}` });
     } finally {
       setSettlingTicketId(null);
     }
@@ -1558,24 +1638,30 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
 
           {/* Interactive Tickets Table */}
           <div className="p-5 bg-slate-900 border border-slate-800 rounded-3xl space-y-4">
-            {auditFilteredTickets.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs font-bold">
-                No tickets match the selected filter criteria.
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  {auditFilteredTickets
-                    .slice((ticketPage - 1) * ticketPageSize, ticketPage * ticketPageSize)
-                    .map((ticket) => {
-                      const uObj = usersMap[ticket.userId];
-                      const name = (ticket as any).userName || uObj?.name || 'BETGURU Player';
-                      const phone = (ticket as any).userPhone || uObj?.phone || 'N/A';
-                      const carChoice = (ticket.selectedCar || ticket.selectedNumbers?.[0] as string || 'red').toLowerCase() as SuperCarColor;
+            {(() => {
+              const groupedBatches = groupTicketsByBatch(auditFilteredTickets);
+              if (groupedBatches.length === 0) {
+                return (
+                  <div className="p-8 text-center text-slate-500 text-xs font-bold">
+                    No tickets match the selected filter criteria.
+                  </div>
+                );
+              }
+
+              const paginatedBatches = groupedBatches.slice((ticketPage - 1) * ticketPageSize, ticketPage * ticketPageSize);
+
+              return (
+                <>
+                  <div className="space-y-3">
+                    {paginatedBatches.map((batch) => {
+                      const firstTicket = batch.firstTicket;
+                      const uObj = usersMap[batch.userId];
+                      const name = (firstTicket as any).userName || uObj?.name || 'BETGURU Player';
+                      const phone = (firstTicket as any).userPhone || uObj?.phone || 'N/A';
+                      const carChoice = (batch.selectedCar || 'red').toLowerCase() as SuperCarColor;
                       const carInfo = getSuperCarInfo(carChoice, config);
-                      const isSettling = settlingTicketId === ticket.id;
-                      const exactTimeStr = formatTicketExactTime(ticket);
-                      const exactDateTimeStr = formatTicketExactDateTime(ticket);
+                      const isSettling = settlingTicketId === batch.groupKey;
+                      const exactDateTimeStr = formatTicketExactDateTime(firstTicket);
 
                       return (
                         <div key={ticket.id} className="p-4 bg-slate-950 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl transition-all font-mono">
@@ -1607,11 +1693,13 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                                   <Clock className="w-3 h-3 text-amber-400 animate-spin [animation-duration:3s]" />
                                   <span>TIME: {exactDateTimeStr}</span>
                                 </div>
-                                <span className="text-xs font-black text-amber-400">#{ticket.ticketNumber || ticket.id}</span>
+                                <span className="text-xs font-black text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40">
+                                  {batch.quantity}x {batch.quantity === 1 ? 'Ticket' : 'Tickets Bulk'}
+                                </span>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-bold text-white truncate">{ticket.drawTitle || '3 Super Car Draw'}</span>
+                                <span className="text-xs font-bold text-white truncate">{batch.drawTitle || '3 Super Car Draw'}</span>
                               </div>
 
                               <p className="text-xs text-slate-300 truncate">
@@ -1619,7 +1707,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                               </p>
                               
                               <p className="text-[10px] text-slate-400">
-                                UID: <span className="text-amber-300 font-bold">{ticket.userId}</span> • Price: <span className="text-emerald-400 font-bold">₹{ticket.price}</span>
+                                UID: <span className="text-amber-300 font-bold">{batch.userId}</span> • Total Price: <span className="text-emerald-400 font-extrabold text-xs">₹{batch.totalPrice.toLocaleString('en-IN')}</span> ({batch.quantity}x @ ₹{firstTicket.price || 100})
                               </p>
                             </div>
                           </div>
@@ -1629,13 +1717,13 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                             <div className="text-left md:text-right">
                               <span className="text-[9px] text-slate-400 uppercase block font-bold">Status</span>
                               <span className={`text-xs font-black uppercase px-3 py-1 rounded-full border block ${
-                                ticket.status === 'win'
+                                batch.status === 'win'
                                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                  : ticket.status === 'loss'
+                                  : batch.status === 'loss'
                                   ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                                   : 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                               }`}>
-                                {ticket.status === 'win' ? `WON ₹${(ticket.wonAmount || 0).toLocaleString('en-IN')}` : ticket.status === 'loss' ? 'LOST (NO REFUND)' : 'ACTIVE PENDING'}
+                                {batch.status === 'win' ? `WON ₹${(batch.totalWonAmount || 0).toLocaleString('en-IN')}` : batch.status === 'loss' ? 'LOST (NO REFUND)' : 'ACTIVE PENDING'}
                               </span>
                             </div>
 
@@ -1643,7 +1731,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                             <div className="flex items-center gap-1.5">
                               <button
                                 disabled={isSettling}
-                                onClick={() => handleManualSettleTicket(ticket, 'win')}
+                                onClick={() => handleManualSettleBatch(batch, 'win')}
                                 className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1652,7 +1740,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
 
                               <button
                                 disabled={isSettling}
-                                onClick={() => handleManualSettleTicket(ticket, 'loss')}
+                                onClick={() => handleManualSettleBatch(batch, 'loss')}
                                 className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
                               >
                                 <XCircle className="w-3.5 h-3.5" />
@@ -1661,7 +1749,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
 
                               <button
                                 disabled={isSettling}
-                                onClick={() => handleManualSettleTicket(ticket, 'active')}
+                                onClick={() => handleManualSettleBatch(batch, 'active')}
                                 className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
                                 title="Reset status to active"
                               >
@@ -1677,20 +1765,21 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
 
                 <PaginationBar
                   currentPage={ticketPage}
-                  totalPages={Math.ceil(auditFilteredTickets.length / ticketPageSize) || 1}
+                  totalPages={Math.ceil(groupedBatches.length / ticketPageSize) || 1}
                   pageSize={ticketPageSize}
-                  totalItems={auditFilteredTickets.length}
+                  totalItems={groupedBatches.length}
                   onPageChange={(page) => setTicketPage(page)}
                   onPageSizeChange={(size) => {
                     setTicketPageSize(size);
                     setTicketPage(1);
                   }}
                   pageSizeOptions={[10, 20, 50, 100]}
-                  label="purchased user tickets"
+                  label="grouped ticket batches"
                 />
               </>
-            )}
-          </div>
+            );
+          })()}
+        </div>
 
         </div>
       )}

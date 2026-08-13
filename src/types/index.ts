@@ -27,12 +27,27 @@ export interface User {
   totalSpent: number;
   status: 'active' | 'suspended';
   lastSpinTime?: number; // timestamp of last lucky wheel spin
+  spinCredits?: number; // available lucky wheel spin credits earned from deposits or gifted by admin
   totalReferrals?: number;
   role?: 'user' | 'admin';
   settings?: UserSettings;
   isSuspicious?: boolean;
   suspiciousReason?: string;
   suspiciousDate?: string;
+  linkedDocIds?: string[];
+}
+
+export interface WheelSector {
+  id: string;
+  label: string;
+  amount: number;
+  color: string;
+}
+
+export interface WheelConfig {
+  minDepositAmount: number;
+  sectors: WheelSector[];
+  updatedAt?: string;
 }
 
 export interface RegistrationConfig {
@@ -50,13 +65,31 @@ export interface NotificationConfig {
 export interface WalletTransaction {
   id: string;
   userId: string;
-  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win' | 'ticket_win';
+  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win' | 'ticket_win' | 'ticket_loss';
   amount: number;
   description: string;
   status: 'completed' | 'pending' | 'failed' | 'rejected';
   date: string;
   createdAt?: string | number;
   utr?: string;
+}
+
+export type BannerCategory = 'lottery' | 'supercar' | 'deposit' | 'offers';
+
+export interface BannerSlide {
+  id: string;
+  category: BannerCategory;
+  title: string;
+  subtitle?: string;
+  imageUrl: string;
+  actionType: 'deposit' | 'supercar' | 'lottery' | 'wheel' | 'roulette' | 'withdrawal' | 'custom_url';
+  targetUrl?: string;
+  badgeText?: string;
+  bgGradient?: string;
+  active: boolean;
+  order: number;
+  orderIndex?: number;
+  createdAt?: string;
 }
 
 export interface DepositRequest {
@@ -139,6 +172,7 @@ export interface LotteryDraw {
 
 export interface PurchasedTicket {
   id: string;
+  batchId?: string;
   userId: string;
   drawId: string;
   drawTitle: string;
