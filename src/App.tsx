@@ -128,7 +128,11 @@ export default function App() {
   const persistTransaction = async (tx: WalletTransaction) => {
     try {
       const txRef = doc(db, 'transactions', tx.id);
-      await setDoc(txRef, tx, { merge: true });
+      const sanitizedTx = {
+        ...tx,
+        createdAt: tx.createdAt || new Date().toISOString()
+      };
+      await setDoc(txRef, sanitizedTx, { merge: true });
     } catch (err) {
       console.error('Error persisting transaction to Firestore:', err);
     }
@@ -138,7 +142,10 @@ export default function App() {
     try {
       const depRef = doc(db, 'deposits', dep.id);
       // Ensure screenshotUrl base64 doesn't exceed Firestore document size limit (1MB)
-      let sanitizedDep = { ...dep };
+      let sanitizedDep = { 
+        ...dep,
+        createdAt: dep.createdAt || new Date().toISOString()
+      };
       if (sanitizedDep.screenshotUrl && sanitizedDep.screenshotUrl.length > 300000) {
         sanitizedDep.screenshotUrl = 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=400&q=80';
       }
@@ -151,7 +158,11 @@ export default function App() {
   const persistWithdrawal = async (wth: WithdrawalRequest) => {
     try {
       const wthRef = doc(db, 'withdrawals', wth.id);
-      await setDoc(wthRef, wth, { merge: true });
+      const sanitizedWth = {
+        ...wth,
+        createdAt: wth.createdAt || new Date().toISOString()
+      };
+      await setDoc(wthRef, sanitizedWth, { merge: true });
     } catch (err) {
       console.error('Error persisting withdrawal to Firestore:', err);
     }
@@ -160,7 +171,11 @@ export default function App() {
   const persistTicket = async (ticket: PurchasedTicket) => {
     try {
       const ticketRef = doc(db, 'tickets', ticket.id);
-      await setDoc(ticketRef, ticket, { merge: true });
+      const sanitizedTicket = {
+        ...ticket,
+        createdAt: ticket.createdAt || new Date().toISOString()
+      };
+      await setDoc(ticketRef, sanitizedTicket, { merge: true });
     } catch (err) {
       console.error('Error persisting ticket to Firestore:', err);
     }
@@ -169,7 +184,11 @@ export default function App() {
   const persistNotification = async (ntf: NotificationItem) => {
     try {
       const ntfRef = doc(db, 'notifications', ntf.id);
-      await setDoc(ntfRef, ntf, { merge: true });
+      const sanitizedNtf = {
+        ...ntf,
+        createdAt: ntf.createdAt || new Date().toISOString()
+      };
+      await setDoc(ntfRef, sanitizedNtf, { merge: true });
     } catch (err) {
       console.error('Error persisting notification to Firestore:', err);
     }
@@ -244,39 +263,39 @@ export default function App() {
         }
       }, (err) => console.warn('Real-time user snapshot notice:', err.message));
 
-      // 2. Real-time Transactions query
-      let qTx;
-      try {
-        qTx = query(collection(db, 'transactions'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
-      } catch (_) {
-        qTx = query(collection(db, 'transactions'), where('userId', '==', activeUid), limit(100));
-      }
+      // 2. Real-time Transactions query with server-side orderBy('createdAt', 'desc')
+      const qTx = claimsAdmin
+        ? query(collection(db, 'transactions'), orderBy('createdAt', 'desc'), limit(100))
+        : query(collection(db, 'transactions'), where('userId', '==', activeUid), orderBy('createdAt', 'desc'), limit(100));
+
       unsubTx = onSnapshot(qTx, (txSnap) => {
         if (!txSnap.empty) {
-          const loadedTxs = sortChronologicalNewestFirst(txSnap.docs.map((d) => d.data() as WalletTransaction));
+          const loadedTxs = txSnap.docs.map((d) => d.data() as WalletTransaction);
           setTransactions(loadedTxs);
         } else {
           setTransactions([]);
         }
       }, (err) => {
         console.warn('Real-time transactions snapshot notice:', err.message);
-        const fallbackQ = query(collection(db, 'transactions'), where('userId', '==', activeUid), limit(100));
+        const fallbackQ = claimsAdmin
+          ? query(collection(db, 'transactions'), limit(100))
+          : query(collection(db, 'transactions'), where('userId', '==', activeUid), limit(100));
         onSnapshot(fallbackQ, (fSnap) => {
           if (!fSnap.empty) {
-            setTransactions(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WalletTransaction)));
+            setTransactions(fSnap.docs.map((d) => d.data() as WalletTransaction));
           } else {
             setTransactions([]);
           }
         });
       });
 
-      // 3. Real-time Deposit Requests query
+      // 3. Real-time Deposit Requests query with server-side orderBy('createdAt', 'desc')
       const qDeposits = claimsAdmin
-        ? query(collection(db, 'deposits'), orderBy('date', 'desc'), limit(100))
-        : query(collection(db, 'deposits'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
+        ? query(collection(db, 'deposits'), orderBy('createdAt', 'desc'), limit(100))
+        : query(collection(db, 'deposits'), where('userId', '==', activeUid), orderBy('createdAt', 'desc'), limit(100));
       unsubDeposits = onSnapshot(qDeposits, (snap) => {
         if (!snap.empty) {
-          const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as DepositRequest));
+          const list = snap.docs.map((d) => d.data() as DepositRequest);
           setDeposits(list);
         } else {
           setDeposits([]);
@@ -288,20 +307,20 @@ export default function App() {
           : query(collection(db, 'deposits'), where('userId', '==', activeUid), limit(100));
         onSnapshot(fallbackQ, (fSnap) => {
           if (!fSnap.empty) {
-            setDeposits(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as DepositRequest)));
+            setDeposits(fSnap.docs.map((d) => d.data() as DepositRequest));
           } else {
             setDeposits([]);
           }
         });
       });
 
-      // 4. Real-time Withdrawal Requests query
+      // 4. Real-time Withdrawal Requests query with server-side orderBy('createdAt', 'desc')
       const qWithdrawals = claimsAdmin
-        ? query(collection(db, 'withdrawals'), orderBy('date', 'desc'), limit(100))
-        : query(collection(db, 'withdrawals'), where('userId', '==', activeUid), orderBy('date', 'desc'), limit(100));
+        ? query(collection(db, 'withdrawals'), orderBy('createdAt', 'desc'), limit(100))
+        : query(collection(db, 'withdrawals'), where('userId', '==', activeUid), orderBy('createdAt', 'desc'), limit(100));
       unsubWithdrawals = onSnapshot(qWithdrawals, (snap) => {
         if (!snap.empty) {
-          const list = sortChronologicalNewestFirst(snap.docs.map((d) => d.data() as WithdrawalRequest));
+          const list = snap.docs.map((d) => d.data() as WithdrawalRequest);
           setWithdrawals(list);
         } else {
           setWithdrawals([]);
@@ -313,20 +332,20 @@ export default function App() {
           : query(collection(db, 'withdrawals'), where('userId', '==', activeUid), limit(100));
         onSnapshot(fallbackQ, (fSnap) => {
           if (!fSnap.empty) {
-            setWithdrawals(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as WithdrawalRequest)));
+            setWithdrawals(fSnap.docs.map((d) => d.data() as WithdrawalRequest));
           } else {
             setWithdrawals([]);
           }
         });
       });
 
-      // 5. Real-time Lottery Tickets query
+      // 5. Real-time Lottery Tickets query with server-side orderBy('createdAt', 'desc')
       const qTickets = claimsAdmin
-        ? query(collection(db, 'tickets'), orderBy('purchaseDate', 'desc'), limit(100))
-        : query(collection(db, 'tickets'), where('userId', '==', activeUid), orderBy('purchaseDate', 'desc'), limit(100));
+        ? query(collection(db, 'tickets'), orderBy('createdAt', 'desc'), limit(100))
+        : query(collection(db, 'tickets'), where('userId', '==', activeUid), orderBy('createdAt', 'desc'), limit(100));
       unsubTickets = onSnapshot(qTickets, (ticketSnap) => {
         if (!ticketSnap.empty) {
-          const list = sortChronologicalNewestFirst(ticketSnap.docs.map((d) => d.data() as PurchasedTicket));
+          const list = ticketSnap.docs.map((d) => d.data() as PurchasedTicket);
           setTickets(list);
         } else {
           setTickets([]);
@@ -338,25 +357,37 @@ export default function App() {
           : query(collection(db, 'tickets'), where('userId', '==', activeUid), limit(100));
         onSnapshot(fallbackQ, (fSnap) => {
           if (!fSnap.empty) {
-            setTickets(sortChronologicalNewestFirst(fSnap.docs.map((d) => d.data() as PurchasedTicket)));
+            setTickets(fSnap.docs.map((d) => d.data() as PurchasedTicket));
           } else {
             setTickets([]);
           }
         });
       });
 
-      // 6. Real-time Notifications query
+      // 6. Real-time Notifications query with server-side orderBy('createdAt', 'desc')
       const qNotifications = claimsAdmin
-        ? query(collection(db, 'notifications'), limit(50))
-        : query(collection(db, 'notifications'), where('userId', '==', activeUid), limit(50));
+        ? query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(50))
+        : query(collection(db, 'notifications'), where('userId', '==', activeUid), orderBy('createdAt', 'desc'), limit(50));
       unsubNotifications = onSnapshot(qNotifications, (ntfSnap) => {
         if (!ntfSnap.empty) {
-          const list = sortChronologicalNewestFirst(ntfSnap.docs.map((d) => d.data() as NotificationItem));
+          const list = ntfSnap.docs.map((d) => d.data() as NotificationItem);
           setNotifications(list);
         } else {
           setNotifications([]);
         }
-      }, (err) => console.warn('Real-time notifications snapshot notice:', err.message));
+      }, (err) => {
+        console.warn('Real-time notifications snapshot notice:', err.message);
+        const fallbackQ = claimsAdmin
+          ? query(collection(db, 'notifications'), limit(50))
+          : query(collection(db, 'notifications'), where('userId', '==', activeUid), limit(50));
+        onSnapshot(fallbackQ, (fSnap) => {
+          if (!fSnap.empty) {
+            setNotifications(fSnap.docs.map((d) => d.data() as NotificationItem));
+          } else {
+            setNotifications([]);
+          }
+        });
+      });
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {

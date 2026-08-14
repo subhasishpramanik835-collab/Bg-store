@@ -267,7 +267,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
       setLoading(true);
       setError(null);
       soundFx.playClick();
+      
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      auth.useDeviceLanguage();
+
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
@@ -319,7 +325,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
       if (onSuccess) onSuccess();
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
-      setError(err.message || 'Failed to sign in with Google');
+      const msg = err?.message || String(err);
+      if (
+        msg.includes('missing initial state') ||
+        msg.includes('sessionStorage') ||
+        msg.includes('storage-partitioned') ||
+        err?.code === 'auth/popup-blocked' ||
+        err?.code === 'auth/cancelled-popup-request'
+      ) {
+        setError('ব্রাউজারের থার্ড-পার্টি কুকি বা স্টোরেজ সীমাবদ্ধতার (Storage Partitioning) কারণে গুগল পপ-আপ ব্লক হয়েছে। অনুগ্রহ করে সরাসরি ক্রোম ব্রাউজারে নতুন ট্যাবে খুলুন অথবা নিচের ইমেইল ও ইনস্ট্যান্ট OTP দিয়ে লগইন করুন।');
+      } else if (err?.code === 'auth/popup-closed-by-user') {
+        setError('Google Sign-in window was closed.');
+      } else {
+        setError(err.message || 'Failed to sign in with Google');
+      }
     } finally {
       setLoading(false);
     }
