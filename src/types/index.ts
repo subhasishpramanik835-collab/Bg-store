@@ -62,6 +62,17 @@ export interface NotificationConfig {
   chimeType?: 'bell' | 'chime' | 'fanfare';
 }
 
+export interface BonusBalanceRules {
+  allowSuperCar: boolean;          // Default: true (Three Super Car Draw allowed)
+  allowRegularLottery: boolean;   // Default: false (Regular Lottery draws locked by default)
+  allowLiveRoulette: boolean;     // Default: false (Live Roulette locked by default)
+  allowLuckyWheel: boolean;       // Default: false (Lucky Wheel locked by default)
+  defaultBonusAmount: number;     // e.g. 100 on registration
+  isBonusSystemActive: boolean;  // Master toggle for bonus balance system
+  bonusNotice?: string;          // Optional notice/banner text for bonus rules
+  updatedAt?: string;
+}
+
 export interface WalletTransaction {
   id: string;
   userId: string;
@@ -72,6 +83,7 @@ export interface WalletTransaction {
   date: string;
   createdAt?: string | number;
   utr?: string;
+  walletType?: 'main' | 'bonus';
 }
 
 export type BannerCategory = 'lottery' | 'supercar' | 'deposit' | 'offers';
@@ -190,6 +202,7 @@ export interface PurchasedTicket {
   category?: string;
   createdAt?: string;
   slotNum?: number;
+  walletType?: 'main' | 'bonus';
 }
 
 export type SuperCarColor = 'red' | 'black' | 'yellow';
@@ -289,4 +302,20 @@ export interface PaymentConfig {
   maxDeposit: number;
   instructions: string;
   updatedAt?: string;
+}
+
+export type RouletteRtpMode = 'european_standard' | 'dynamic_rtp' | 'house_protect' | 'manual_next_number';
+
+export interface RouletteConfig {
+  rtpPercentage: number; // e.g. 97.3, 90, 85, 80, 70
+  houseEdgePercentage: number; // e.g. 2.7, 10, 15, 20, 30
+  rtpMode: RouletteRtpMode;
+  manualNextNumber?: number; // 0 to 36
+  manualNextNumberActive?: boolean;
+  minBet: number;
+  maxBet: number;
+  maxTotalPayoutLimit?: number;
+  isRouletteEnabled: boolean;
+  lastUpdated?: string;
+  updatedBy?: string;
 }

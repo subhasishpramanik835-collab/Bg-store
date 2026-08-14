@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle, Dices } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle, Dices, Percent } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction, BannerSlide } from '../../types';
 import { soundFx } from '../../utils/audio';
@@ -14,6 +14,8 @@ import { AdminSmtpManager } from './AdminSmtpManager';
 import { AdminSchedulerManager } from './AdminSchedulerManager';
 import { AdminBannerSliderManager } from './AdminBannerSliderManager';
 import { AdminWheelManager } from './AdminWheelManager';
+import { AdminBonusManager } from './AdminBonusManager';
+import { AdminRouletteManager } from './AdminRouletteManager';
 import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
@@ -76,7 +78,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'wheel' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'wheel' | 'roulette' | 'supercar' | 'bonus' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
   const [supercarConfig, setSupercarConfig] = useState<any>({
     enabled: true,
     ticketPrice: 100,
@@ -572,6 +574,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift },
+            { id: 'roulette', label: 'Roulette RTP & Edge', icon: Percent },
             { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
             { id: 'payment', label: 'Payment Settings', icon: QrCode },
             { id: 'wheel', label: 'Lucky Wheel', icon: Dices },
@@ -645,7 +649,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-1 font-mono">
                 {[
                   { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift, desc: 'Control which games use bonus balance' },
+                  { id: 'roulette', label: 'Live Roulette RTP & House Edge', icon: Percent, desc: 'Set manual RTP %, House Edge & target numbers' },
                   { id: 'scheduler', label: 'Universal Lottery Scheduler', icon: Clock, desc: 'Auto draw slots, timers & preset winners' },
+                  { id: 'payment', label: 'Payment Settings', icon: QrCode, desc: 'Configure QR, UPI ID & Deposit limits' },
+                  { id: 'wheel', label: 'Lucky Wheel Manager', icon: Dices, desc: 'Configure spin segments, probabilities & limits' },
+                  { id: 'supercar', label: 'Super Car Draw Manager', icon: Sparkles, desc: 'Result controls, multipliers & settings' },
+                  { id: 'banners', label: 'Banner Sliders Manager', icon: ImageIcon, desc: 'Upload, reorder & preview promotional banners' },
                   { id: 'broadcast', label: 'Broadcast & Notification Center', icon: Bell, desc: 'Multi-channel push & newsletters' },
                   { id: 'smtp', label: 'Gmail SMTP Management', icon: Mail, desc: 'Configure OTP email credentials' },
                   { id: 'deposits', label: 'Deposit Requests', count: pendingDepositsCount, icon: ArrowDownCircle, desc: 'Verify user payment UTR slips' },
@@ -978,6 +988,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* BONUS BALANCE & GAME PERMISSIONS */}
+      {adminTab === 'bonus' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminBonusManager
+            users={allUsers}
+            onUpdateUserBonusBalance={onUpdateUserBonusBalance}
+            currentUser={user}
+          />
+        </div>
+      )}
+
       {/* UNIVERSAL LOTTERY RESULT SCHEDULER */}
       {adminTab === 'scheduler' && (
         <div className="animate-in fade-in duration-200">
@@ -996,6 +1017,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {adminTab === 'wheel' && (
         <div className="animate-in fade-in duration-200">
           <AdminWheelManager users={allUsers} />
+        </div>
+      )}
+
+      {/* LIVE ROULETTE RTP & HOUSE EDGE MANAGER */}
+      {adminTab === 'roulette' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminRouletteManager />
         </div>
       )}
 

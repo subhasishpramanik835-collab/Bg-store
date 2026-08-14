@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Trophy, Flame, Disc, Clock, ShieldCheck, Ticket, ChevronRight, Zap } from 'lucide-react';
-import { SuperCarColor, SuperCarDrawIssue, SuperCarConfig, PurchasedTicket } from '../types';
+import { SuperCarColor, SuperCarDrawIssue, SuperCarConfig, PurchasedTicket, BonusBalanceRules } from '../types';
 import { SUPER_CARS, getSuperCarInfo, getCurrentSuperCarSchedule, formatCountdown } from '../utils/supercar';
 import { SuperCarTicketModal } from './SuperCarTicketModal';
 import { SuperCarResultsModal } from './SuperCarResultsModal';
@@ -8,16 +8,20 @@ import { soundFx } from '../utils/audio';
 
 interface SuperCarDrawSectionProps {
   userBalance: number;
+  userBonusBalance?: number;
+  bonusRules?: BonusBalanceRules;
   config: SuperCarConfig;
   currentIssue: SuperCarDrawIssue | null;
   userTickets: PurchasedTicket[];
   pastDraws: SuperCarDrawIssue[];
-  onConfirmBuyTicket: (carColor: SuperCarColor, quantity: number, totalCost: number, issueId?: string, slotNum?: number) => void;
+  onConfirmBuyTicket: (carColor: SuperCarColor, quantity: number, totalCost: number, issueId?: string, slotNum?: number, walletType?: 'main' | 'bonus') => void;
   onDrawResolved?: (issueId: string, winningCar: SuperCarColor) => void;
 }
 
 export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
   userBalance,
+  userBonusBalance = 0,
+  bonusRules,
   config,
   currentIssue,
   userTickets,
@@ -586,10 +590,12 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
           selectedCarColor={selectedBuyCar}
           currentIssue={currentIssue}
           userBalance={userBalance}
+          userBonusBalance={userBonusBalance}
+          bonusRules={bonusRules}
           ticketPrice={config.ticketPrice || 100}
           prizeMultiplier={config.prizeMultiplier || 2.8}
-          onConfirmBuy={(carColor, quantity, totalCost) => {
-            onConfirmBuyTicket(carColor, quantity, totalCost, scheduleInfo.issueId, scheduleInfo.drawIndex);
+          onConfirmBuy={(carColor, quantity, totalCost, walletType) => {
+            onConfirmBuyTicket(carColor, quantity, totalCost, scheduleInfo.issueId, scheduleInfo.drawIndex, walletType);
             setSelectedBuyCar(null);
           }}
         />

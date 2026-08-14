@@ -367,20 +367,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
         await syncGoogleUserProfile(user);
       }
     } catch (err: any) {
-      console.error('Google Sign-In Error:', err);
       const msg = err?.message || String(err);
-      if (err?.code === 'auth/popup-closed-by-user' || msg.includes('closed-by-user') || msg.includes('closed')) {
+      if (err?.code === 'auth/popup-closed-by-user' || msg.includes('closed-by-user') || msg.includes('popup-closed')) {
+        console.warn('Google Sign-In popup closed by user');
         setError('গুগল সাইন-ইন উইন্ডো বন্ধ করা হয়েছে। পুনরায় চেষ্টা করতে বাটনে ক্লিক করুন।');
-      } else if (err?.code === 'auth/popup-blocked') {
-        setError('ব্রাউজার থেকে পপ-আপ ব্লক করা হয়েছে। দয়া করে ব্রাউজার সেটিংসে পপ-আপ অ্যালাউ করুন অথবা ইমেইল দিয়ে লগইন করুন।');
-      } else if (
-        msg.includes('missing initial state') ||
-        msg.includes('sessionStorage') ||
-        msg.includes('storage-partitioned')
-      ) {
-        setError('ব্রাউজারের কুকি সীমাবদ্ধতার কারণে সমস্যা হয়েছে। অনুগ্রহ করে সরাসরি ক্রোম ব্রাউজারে খুলুন অথবা নিচের ইমেইল ও OTP দিয়ে লগইন করুন।');
       } else {
-        setError(err.message || 'Google Sign-in failed');
+        console.error('Google Sign-In Error:', err);
+        if (err?.code === 'auth/popup-blocked') {
+          setError('ব্রাউজার থেকে পপ-আপ ব্লক করা হয়েছে। দয়া করে ব্রাউজার সেটিংসে পপ-আপ অ্যালাউ করুন অথবা ইমেইল দিয়ে লগইন করুন।');
+        } else if (
+          msg.includes('missing initial state') ||
+          msg.includes('sessionStorage') ||
+          msg.includes('storage-partitioned')
+        ) {
+          setError('ব্রাউজারের কুকি সীমাবদ্ধতার কারণে সমস্যা হয়েছে। অনুগ্রহ করে সরাসরি ক্রোম ব্রাউজারে খুলুন অথবা নিচের ইমেইল ও OTP দিয়ে লগইন করুন।');
+        } else {
+          setError(err.message || 'Google Sign-in failed');
+        }
       }
     } finally {
       setLoading(false);

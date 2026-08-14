@@ -30,7 +30,7 @@ import { SuperCarDrawSection } from './components/SuperCarDrawSection';
 import { CompactUserDashboardCard } from './components/CompactUserDashboardCard';
 import { PromotionalSlider } from './components/PromotionalSlider';
 import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
-import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor } from './types';
+import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor, BonusBalanceRules } from './types';
 import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo, getCurrentSuperCarSchedule, getSlotFromTicket, getWinningCarForSlot, sortChronologicalNewestFirst } from './utils/supercar';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
@@ -58,6 +58,15 @@ export default function App() {
   const [transactions, setTransactions] = useState<WalletTransaction[]>(initialState.transactions);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialState.notifications);
   const [bannerSlides, setBannerSlides] = useState<BannerSlide[]>([]);
+  const [bonusRules, setBonusRules] = useState<BonusBalanceRules>({
+    allowSuperCar: true,
+    allowRegularLottery: false,
+    allowLiveRoulette: false,
+    allowLuckyWheel: false,
+    defaultBonusAmount: 100,
+    isBonusSystemActive: true,
+    bonusNotice: 'বোনাস ব্যালেন্স দিয়ে শুধুমাত্র থ্রী সুপার কার টিকিট কেনা যাবে।'
+  });
 
   // Navigation & Modals UI state
   const [activeTab, setActiveTab] = useState<NavTab | 'settings'>('home');
@@ -609,7 +618,7 @@ export default function App() {
     saveState({ user, draws, deposits, withdrawals, tickets, transactions, notifications });
   }, [user, draws, deposits, withdrawals, tickets, transactions, notifications]);
 
-  // SuperCar Config & Draws Real-time Listener
+  // SuperCar Config, Draws & Bonus Rules Real-time Listeners
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'supercar_config', 'main'), (snap) => {
       if (snap.exists()) {
@@ -618,6 +627,18 @@ export default function App() {
         setSupercarConfig((prev) => ({ ...prev, ...remoteData }));
       }
     }, (err) => console.warn('Supercar config listener notice:', err.message));
+
+    const unsubBonusRules = onSnapshot(doc(db, 'system_settings', 'bonus_rules'), (snap) => {
+      if (snap.exists()) {
+        const remoteData = snap.data() as Partial<BonusBalanceRules>;
+        console.log('[App.tsx] Real-time bonus_rules updated from Firestore:', remoteData);
+        setBonusRules((prev) => ({
+          ...prev,
+          ...remoteData,
+          allowSuperCar: remoteData.allowSuperCar !== undefined ? remoteData.allowSuperCar : true
+        }));
+      }
+    }, (err) => console.warn('Bonus rules listener notice:', err.message));
 
     const qSuperCar = query(collection(db, 'supercar_draws'), limit(1000));
     const unsubDraws = onSnapshot(qSuperCar, (snap) => {
@@ -640,6 +661,7 @@ export default function App() {
 
     return () => {
       unsubConfig();
+      unsubBonusRules();
       unsubDraws();
     };
   }, []);
@@ -658,34 +680,62 @@ export default function App() {
     console.log('[App.tsx] Red Car Full Details:', redCarInfo);
   }, [supercarConfig, isSuperCarEnabled]);
 
-  // SuperCar Ticket Purchase Handler
+  // SuperCar Ticket Purchase Handler (Supports Main Wallet and Bonus Wallet)
   const handleConfirmSuperCarTicketBuy = async (
     carColor: SuperCarColor,
     quantity: number,
     totalCost: number,
     issueId?: string,
-    slotNum?: number
+    slotNum?: number,
+    walletType: 'main' | 'bonus' = 'main'
   ) => {
     const currentUserId = user?.id || 'anonymous';
     const currentBalance = user?.balance || 0;
-    logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost }, currentUserId, user?.email);
+    const currentBonusBalance = user?.bonusBalance || 0;
 
-    if (currentBalance < totalCost) {
-      alert(`Insufficient Wallet Balance! Required ₹${totalCost}, Available ₹${currentBalance}. Please deposit funds.`);
-      setIsDepositOpen(true);
-      return;
+    logAnalyticsEvent('ticket_buy', { category: 'Three Super Car Draw', carColor, quantity, totalCost, walletType }, currentUserId, user?.email);
+
+    // Validate Bonus Balance Permissions
+    if (walletType === 'bonus') {
+      if (bonusRules?.isBonusSystemActive === false || bonusRules?.allowSuperCar === false) {
+        alert('বোনাস ব্যালেন্স দিয়ে সুপার কার টিকিট কেনা বর্তমানে এডমিন কর্তৃক বন্ধ রয়েছে। দয়া করে মূল ব্যালেন্স ব্যবহার করুন।');
+        return;
+      }
+      if (currentBonusBalance < totalCost) {
+        alert(`অপর্যাপ্ত বোনাস ব্যালেন্স! প্রয়োজন ₹${totalCost}, আছে ₹${currentBonusBalance.toFixed(2)}। মূল ব্যালেন্স ব্যবহার করুন বা ডিপোজিট করুন।`);
+        return;
+      }
+    } else {
+      if (currentBalance < totalCost) {
+        alert(`Insufficient Wallet Balance! Required ₹${totalCost}, Available ₹${currentBalance.toFixed(2)}. Please deposit funds.`);
+        setIsDepositOpen(true);
+        return;
+      }
     }
 
-    const newBal = currentBalance - totalCost;
     const earnedVipPts = Math.floor(totalCost / 10);
     const updatedVipPts = (user?.vipPoints || 0) + earnedVipPts;
 
-    setUser((prev) => ({
-      ...prev,
-      balance: newBal,
-      vipPoints: updatedVipPts
-    }));
-    if (user?.id) persistUserBalance(user.id, newBal);
+    let newBal = currentBalance;
+    let newBonusBal = currentBonusBalance;
+
+    if (walletType === 'bonus') {
+      newBonusBal = Math.max(0, currentBonusBalance - totalCost);
+      setUser((prev) => ({
+        ...prev,
+        bonusBalance: newBonusBal,
+        vipPoints: updatedVipPts
+      }));
+      if (user?.id) persistUserBalance(user.id, currentBalance, newBonusBal, user.email);
+    } else {
+      newBal = Math.max(0, currentBalance - totalCost);
+      setUser((prev) => ({
+        ...prev,
+        balance: newBal,
+        vipPoints: updatedVipPts
+      }));
+      if (user?.id) persistUserBalance(user.id, newBal, currentBonusBalance, user.email);
+    }
 
     const now = new Date();
     const isoDateStr = now.toISOString();
@@ -693,7 +743,6 @@ export default function App() {
     const monthStr = String(now.getMonth() + 1).padStart(2, '0');
     const dayStr = String(now.getDate()).padStart(2, '0');
     const todayDashDate = `${year}-${monthStr}-${dayStr}`;
-    const todayCompactDate = `${year}${monthStr}${dayStr}`;
 
     let activeSlot = slotNum;
     let activeIssueId = issueId;
@@ -736,7 +785,8 @@ export default function App() {
         createdAt: isoDateStr,
         status: 'active',
         selectedCar: carColor.toLowerCase() as SuperCarColor,
-        slotNum: activeSlot
+        slotNum: activeSlot,
+        walletType: walletType
       };
       newTickets.push(newTicket);
     }
@@ -749,7 +799,8 @@ export default function App() {
       userId: currentUserId,
       type: 'ticket_buy',
       amount: -totalCost,
-      description: `Purchased ${quantity}x ${carColor.toUpperCase()} Super Car Ticket(s) (+${earnedVipPts} VIP Pts)`,
+      walletType: walletType,
+      description: `Purchased ${quantity}x ${carColor.toUpperCase()} Super Car Ticket(s) (from ${walletType === 'bonus' ? 'Bonus' : 'Main'} Wallet) (+${earnedVipPts} VIP Pts)`,
       status: 'completed',
       date: isoDateStr,
       createdAt: new Date().toISOString()
@@ -765,7 +816,8 @@ export default function App() {
     soundFx.playWinFanfare();
     triggerConfetti();
 
-    let totalWonAmount = 0;
+    let totalWonMainAmount = 0;
+    let totalWonBonusAmount = 0;
     const multiplier = supercarConfig.prizeMultiplier || 2.8;
 
     const updatedTickets = tickets.map((t) => {
@@ -780,7 +832,11 @@ export default function App() {
           const tCar = (t.selectedCar || t.selectedNumbers?.[0] as string || 'red').toLowerCase();
           if (tCar === winningCar.toLowerCase()) {
             const winAmt = Math.round(t.price * multiplier);
-            totalWonAmount += winAmt;
+            if (t.walletType === 'bonus') {
+              totalWonBonusAmount += winAmt;
+            } else {
+              totalWonMainAmount += winAmt;
+            }
             const updatedT = { ...t, status: 'win' as const, winAmount: winAmt, drawId: issueId };
             persistTicket(updatedT);
             return updatedT;
@@ -796,23 +852,51 @@ export default function App() {
 
     setTickets(sortChronologicalNewestFirst(updatedTickets));
 
-    if (totalWonAmount > 0) {
-      const newBal = (user?.balance || 0) + totalWonAmount;
-      setUser((prev) => prev ? ({ ...prev, balance: newBal }) : prev);
-      if (user?.id) persistUserBalance(user.id, newBal);
+    if (totalWonMainAmount > 0 || totalWonBonusAmount > 0) {
+      setUser((prev) => {
+        if (!prev) return prev;
+        const newBal = (prev.balance || 0) + totalWonMainAmount;
+        const newBonusBal = (prev.bonusBalance || 0) + totalWonBonusAmount;
+        if (prev.id) persistUserBalance(prev.id, newBal, newBonusBal, prev.email);
+        return {
+          ...prev,
+          balance: newBal,
+          bonusBalance: newBonusBal,
+          totalWon: (prev.totalWon || 0) + totalWonMainAmount + totalWonBonusAmount
+        };
+      });
 
-      const winTx: WalletTransaction = {
-        id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
-        userId: user?.id || 'anonymous',
-        type: 'ticket_win',
-        amount: totalWonAmount,
-        description: `🏆 WON Super Car Draw Jackpot (${winningCar.toUpperCase()} Car Winner!)`,
-        status: 'completed',
-        date: new Date().toLocaleString('en-IN'),
-        createdAt: new Date().toISOString()
-      };
-      setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
-      persistTransaction(winTx);
+      if (totalWonMainAmount > 0) {
+        const winMainTx: WalletTransaction = {
+          id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
+          userId: user?.id || 'anonymous',
+          type: 'ticket_win',
+          amount: totalWonMainAmount,
+          walletType: 'main',
+          description: `🏆 WON Super Car Draw Jackpot (${winningCar.toUpperCase()} Car Winner!) - Added to Main Wallet`,
+          status: 'completed',
+          date: new Date().toLocaleString('en-IN'),
+          createdAt: new Date().toISOString()
+        };
+        setTransactions((prev) => sortChronologicalNewestFirst([winMainTx, ...prev]));
+        persistTransaction(winMainTx);
+      }
+
+      if (totalWonBonusAmount > 0) {
+        const winBonusTx: WalletTransaction = {
+          id: `TXN-SC-BONUS-WIN-${Date.now().toString().slice(-4)}`,
+          userId: user?.id || 'anonymous',
+          type: 'ticket_win',
+          amount: totalWonBonusAmount,
+          walletType: 'bonus',
+          description: `🏆 WON Super Car Draw (${winningCar.toUpperCase()} Car Winner!) - Added to Bonus Wallet`,
+          status: 'completed',
+          date: new Date().toLocaleString('en-IN'),
+          createdAt: new Date().toISOString()
+        };
+        setTransactions((prev) => sortChronologicalNewestFirst([winBonusTx, ...prev]));
+        persistTransaction(winBonusTx);
+      }
     }
 
     try {
@@ -841,7 +925,8 @@ export default function App() {
       if (activeSuperCarTickets.length === 0) return;
 
       const nowMs = Date.now();
-      let totalNewWonAmount = 0;
+      let totalNewWonMainAmount = 0;
+      let totalNewWonBonusAmount = 0;
       let lastWonCar: SuperCarColor = 'black';
       let hasSettled = false;
 
@@ -867,7 +952,11 @@ export default function App() {
             if (isWinner) {
               const multiplier = supercarConfig.prizeMultiplier || 2.8;
               const winAmt = Math.round(t.price * multiplier);
-              totalNewWonAmount += winAmt;
+              if (t.walletType === 'bonus') {
+                totalNewWonBonusAmount += winAmt;
+              } else {
+                totalNewWonMainAmount += winAmt;
+              }
               lastWonCar = winningCar;
 
               const updatedT: PurchasedTicket = {
@@ -897,26 +986,51 @@ export default function App() {
       if (hasSettled) {
         setTickets(sortChronologicalNewestFirst(updated));
 
-        if (totalNewWonAmount > 0) {
+        if (totalNewWonMainAmount > 0 || totalNewWonBonusAmount > 0) {
           setUser((prev) => {
             if (!prev) return prev;
-            const newBal = (prev.balance || 0) + totalNewWonAmount;
-            if (prev.id) persistUserBalance(prev.id, newBal);
-            return { ...prev, balance: newBal };
+            const newBal = (prev.balance || 0) + totalNewWonMainAmount;
+            const newBonusBal = (prev.bonusBalance || 0) + totalNewWonBonusAmount;
+            if (prev.id) persistUserBalance(prev.id, newBal, newBonusBal, prev.email);
+            return {
+              ...prev,
+              balance: newBal,
+              bonusBalance: newBonusBal,
+              totalWon: (prev.totalWon || 0) + totalNewWonMainAmount + totalNewWonBonusAmount
+            };
           });
 
-          const winTx: WalletTransaction = {
-            id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
-            userId: user?.id || 'anonymous',
-            type: 'ticket_win',
-            amount: totalNewWonAmount,
-            description: `🏆 Auto Payout: WON Super Car Draw (${lastWonCar.toUpperCase()} Winner!)`,
-            status: 'completed',
-            date: new Date().toLocaleString('en-IN'),
-            createdAt: new Date().toISOString()
-          };
-          setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
-          persistTransaction(winTx);
+          if (totalNewWonMainAmount > 0) {
+            const winTx: WalletTransaction = {
+              id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
+              userId: user?.id || 'anonymous',
+              type: 'ticket_win',
+              amount: totalNewWonMainAmount,
+              walletType: 'main',
+              description: `🏆 Auto Payout: WON Super Car Draw (${lastWonCar.toUpperCase()} Winner!) - Credited to Main Wallet`,
+              status: 'completed',
+              date: new Date().toLocaleString('en-IN'),
+              createdAt: new Date().toISOString()
+            };
+            setTransactions((prev) => sortChronologicalNewestFirst([winTx, ...prev]));
+            persistTransaction(winTx);
+          }
+
+          if (totalNewWonBonusAmount > 0) {
+            const bonusWinTx: WalletTransaction = {
+              id: `TXN-SC-BONUS-WIN-${Date.now().toString().slice(-4)}`,
+              userId: user?.id || 'anonymous',
+              type: 'ticket_win',
+              amount: totalNewWonBonusAmount,
+              walletType: 'bonus',
+              description: `🏆 Auto Payout: WON Super Car Draw (${lastWonCar.toUpperCase()} Winner!) - Credited to Bonus Wallet`,
+              status: 'completed',
+              date: new Date().toLocaleString('en-IN'),
+              createdAt: new Date().toISOString()
+            };
+            setTransactions((prev) => sortChronologicalNewestFirst([bonusWinTx, ...prev]));
+            persistTransaction(bonusWinTx);
+          }
 
           try {
             soundFx.playWinFanfare();
@@ -974,15 +1088,19 @@ export default function App() {
               t.wonAmount = wonAmount;
 
               if (isWin) {
-                // Auto add funds to user wallet
+                const isBonusWallet = t.walletType === 'bonus';
+                // Auto add funds to user wallet (Main vs Bonus according to purchase source)
                 setUser((prev) => {
                   if (!prev) return prev;
                   const currentBal = prev.balance || 0;
-                  const newBal = currentBal + wonAmount;
-                  if (prev.id) persistUserBalance(prev.id, newBal);
+                  const currentBonus = prev.bonusBalance || 0;
+                  const newBal = isBonusWallet ? currentBal : currentBal + wonAmount;
+                  const newBonus = isBonusWallet ? currentBonus + wonAmount : currentBonus;
+                  if (prev.id) persistUserBalance(prev.id, newBal, newBonus, prev.email);
                   return {
                     ...prev,
                     balance: newBal,
+                    bonusBalance: newBonus,
                     totalWon: (prev.totalWon || 0) + wonAmount
                   };
                 });
@@ -995,9 +1113,11 @@ export default function App() {
                   userId: currentUserId,
                   type: 'win_payout',
                   amount: wonAmount,
-                  description: `Jackpot Win! ${draw.title}`,
+                  walletType: isBonusWallet ? 'bonus' : 'main',
+                  description: `Jackpot Win! ${draw.title} (${isBonusWallet ? 'Credited to Bonus Wallet' : 'Credited to Main Wallet'})`,
                   status: 'completed',
-                  date: new Date().toLocaleString('en-IN')
+                  date: new Date().toLocaleString('en-IN'),
+                  createdAt: new Date().toISOString()
                 };
                 setTransactions((prev) => [winTx, ...prev]);
                 persistTransaction(winTx);
@@ -1007,7 +1127,7 @@ export default function App() {
                   id: `NTF-${Date.now()}`,
                   userId: currentUserId,
                   title: `🎉 JACKPOT WINNER! You Won ₹${wonAmount.toLocaleString('en-IN')}`,
-                  message: `Your ticket for ${draw.title} matched all numbers (${winningDigits.join(' ')})!`,
+                  message: `Your ticket for ${draw.title} matched all numbers (${winningDigits.join(' ')})! Credited to ${isBonusWallet ? 'Bonus' : 'Main'} Wallet.`,
                   type: 'win',
                   date: 'Just now',
                   read: false
@@ -1394,18 +1514,46 @@ export default function App() {
     }
   };
 
-  // Handle Ticket Purchase Confirmation
-  const handleConfirmTicketBuy = (draw: LotteryDraw, ticketDigitsArray: number[][], totalPrice: number) => {
+  // Handle Ticket Purchase Confirmation (Supports Main Wallet and Bonus Wallet)
+  const handleConfirmTicketBuy = (
+    draw: LotteryDraw,
+    ticketDigitsArray: number[][],
+    totalPrice: number,
+    walletType: 'main' | 'bonus' = 'main'
+  ) => {
     if (user) {
-      logAnalyticsEvent('ticket_buy', { gameType: 'lottery', drawId: draw.id, drawTitle: draw.title, ticketCount: ticketDigitsArray.length, totalPrice }, user.id, user.email);
+      logAnalyticsEvent('ticket_buy', { gameType: 'lottery', drawId: draw.id, drawTitle: draw.title, ticketCount: ticketDigitsArray.length, totalPrice, walletType }, user.id, user.email);
+    }
+
+    if (walletType === 'bonus' && (!bonusRules?.isBonusSystemActive || !bonusRules?.allowRegularLottery)) {
+      alert('বোনাস ব্যালেন্স দিয়ে শুধুমাত্র থ্রী সুপার কার টিকিট কেনা যাবে। এই লটারির জন্য মূল ব্যালেন্স ব্যবহার করুন।');
+      return;
     }
 
     // Award VIP Points (1 Point per ₹10 spent)
     const earnedVipPts = Math.floor(totalPrice / 10);
 
-    // Deduct user balance & add VIP Points
     const currentBal = user?.balance || 0;
-    const newBal = Math.max(0, currentBal - totalPrice);
+    const currentBonus = user?.bonusBalance || 0;
+
+    let newBal = currentBal;
+    let newBonus = currentBonus;
+
+    if (walletType === 'bonus') {
+      if (currentBonus < totalPrice) {
+        alert(`অপর্যাপ্ত বোনাস ব্যালেন্স! প্রয়োজন ₹${totalPrice}, আছে ₹${currentBonus.toFixed(2)}।`);
+        return;
+      }
+      newBonus = Math.max(0, currentBonus - totalPrice);
+    } else {
+      if (currentBal < totalPrice) {
+        alert(`Insufficient Wallet Balance! Required ₹${totalPrice}, Available ₹${currentBal.toFixed(2)}.`);
+        setIsDepositOpen(true);
+        return;
+      }
+      newBal = Math.max(0, currentBal - totalPrice);
+    }
+
     setUser((prev) => {
       if (!prev) return prev;
       const newPts = (prev.vipPoints || 120) + earnedVipPts;
@@ -1417,12 +1565,13 @@ export default function App() {
       return {
         ...prev,
         balance: newBal,
+        bonusBalance: newBonus,
         totalSpent: (prev.totalSpent || 0) + totalPrice,
         vipPoints: newPts,
         vipLevel: newLevel
       };
     });
-    if (user?.id) persistUserBalance(user.id, newBal);
+    if (user?.id) persistUserBalance(user.id, newBal, newBonus, user.email);
 
     // Create tickets
     const batchId = `BATCH-LOTTERY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1437,7 +1586,8 @@ export default function App() {
       price: draw.ticketPrice,
       purchaseDate: new Date().toLocaleString('en-IN'),
       drawTime: draw.endTime,
-      status: 'active'
+      status: 'active',
+      walletType: walletType
     }));
 
     setTickets((prev) => sortChronologicalNewestFirst([...newTickets, ...prev]));
@@ -1449,7 +1599,8 @@ export default function App() {
       userId: user?.id || 'anonymous',
       type: 'ticket_buy',
       amount: -totalPrice,
-      description: `Purchased ${ticketDigitsArray.length} Ticket(s) - ${draw.title} (+${earnedVipPts} VIP Pts)`,
+      walletType: walletType,
+      description: `Purchased ${ticketDigitsArray.length} Ticket(s) - ${draw.title} (from ${walletType === 'bonus' ? 'Bonus' : 'Main'} Wallet) (+${earnedVipPts} VIP Pts)`,
       status: 'completed',
       date: new Date().toLocaleString('en-IN'),
       createdAt: new Date().toISOString()
@@ -1694,6 +1845,8 @@ export default function App() {
                 {isSuperCarEnabled && (
                   <SuperCarDrawSection
                     userBalance={user.balance}
+                    userBonusBalance={user.bonusBalance || 0}
+                    bonusRules={bonusRules}
                     config={supercarConfig}
                     currentIssue={supercarCurrentIssue}
                     userTickets={tickets.filter((t) => t.category === 'Three Super Car Draw')}
@@ -1718,6 +1871,8 @@ export default function App() {
                 {isSuperCarEnabled && (
                   <SuperCarDrawSection
                     userBalance={user.balance}
+                    userBonusBalance={user.bonusBalance || 0}
+                    bonusRules={bonusRules}
                     config={supercarConfig}
                     currentIssue={supercarCurrentIssue}
                     userTickets={tickets.filter((t) => t.category === 'Three Super Car Draw')}
@@ -1843,6 +1998,8 @@ export default function App() {
       <TicketBuyModal
         draw={buyTicketDraw}
         userBalance={user.balance}
+        userBonusBalance={user.bonusBalance || 0}
+        bonusRules={bonusRules}
         onClose={() => setBuyTicketDraw(null)}
         onConfirmPurchase={handleConfirmTicketBuy}
       />

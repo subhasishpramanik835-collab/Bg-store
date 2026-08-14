@@ -1,26 +1,34 @@
 import React, { useState } from 'react';
-import { X, Ticket, Sparkles, Shuffle, CheckCircle2, AlertCircle, Wallet } from 'lucide-react';
-import { LotteryDraw } from '../types';
+import { X, Ticket, Sparkles, Shuffle, CheckCircle2, AlertCircle, Wallet, Gift, Lock } from 'lucide-react';
+import { LotteryDraw, BonusBalanceRules } from '../types';
 import { soundFx } from '../utils/audio';
 
 interface TicketBuyModalProps {
   draw: LotteryDraw | null;
   userBalance: number;
+  userBonusBalance?: number;
+  bonusRules?: BonusBalanceRules;
   onClose: () => void;
-  onConfirmPurchase: (draw: LotteryDraw, tickets: number[][], totalPrice: number) => void;
+  onConfirmPurchase: (draw: LotteryDraw, tickets: number[][], totalPrice: number, walletType?: 'main' | 'bonus') => void;
 }
 
 export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
   draw,
   userBalance,
+  userBonusBalance = 0,
+  bonusRules,
   onClose,
   onConfirmPurchase
 }) => {
   const [ticketCount, setTicketCount] = useState<number>(1);
   const [selectedDigits, setSelectedDigits] = useState<number[]>([4, 8, 2, 9, 1, 0]);
+  const [walletType, setWalletType] = useState<'main' | 'bonus'>('main');
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   if (!draw) return null;
+
+  const isBonusAllowedForLottery = (bonusRules?.allowRegularLottery ?? false) && (bonusRules?.isBonusSystemActive ?? true);
+  const effectiveBalance = walletType === 'bonus' ? userBonusBalance : userBalance;
 
   const digitLength = draw.category === '4D Express' ? 4 : 6;
 
@@ -45,8 +53,17 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
   const handleBuy = () => {
     setErrorMsg('');
 
-    if (totalPrice > userBalance) {
-      setErrorMsg(`Insufficient wallet balance (₹${userBalance.toLocaleString('en-IN')}). Please deposit funds.`);
+    if (walletType === 'bonus' && !isBonusAllowedForLottery) {
+      setErrorMsg('বোনাস ব্যালেন্স দিয়ে শুধুমাত্র থ্রী সুপার কার টিকিট কেনা যাবে। এই লটারির জন্য মূল ব্যালেন্স ব্যবহার করুন।');
+      return;
+    }
+
+    if (totalPrice > effectiveBalance) {
+      setErrorMsg(
+        walletType === 'bonus'
+          ? `Insufficient bonus balance (₹${userBonusBalance.toLocaleString('en-IN')}). Please select Main Wallet.`
+          : `Insufficient wallet balance (₹${userBalance.toLocaleString('en-IN')}). Please deposit funds.`
+      );
       return;
     }
 
@@ -61,7 +78,7 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
     }
 
     soundFx.playCoin();
-    onConfirmPurchase(draw, tickets, totalPrice);
+    onConfirmPurchase(draw, tickets, totalPrice, walletType);
     onClose();
   };
 
@@ -82,14 +99,72 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-4">
           
+          {/* Payment Wallet Selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block font-mono">
+              Payment Source
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  setWalletType('main');
+                }}
+                className={`p-2.5 rounded-xl border text-left font-mono transition-all cursor-pointer ${
+                  walletType === 'main'
+                    ? 'bg-amber-950/60 border-amber-400 ring-2 ring-amber-400/40 shadow-md'
+                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-amber-400 font-bold uppercase">Main Cash</span>
+                  {walletType === 'main' && <CheckCircle2 className="w-3 h-3 text-amber-400" />}
+                </div>
+                <div className="text-xs font-black text-white mt-0.5">₹{userBalance.toFixed(2)}</div>
+              </button>
+
+              <button
+                type="button"
+                disabled={!isBonusAllowedForLottery}
+                onClick={() => {
+                  if (isBonusAllowedForLottery) {
+                    soundFx.playClick();
+                    setWalletType('bonus');
+                  }
+                }}
+                className={`p-2.5 rounded-xl border text-left font-mono transition-all ${
+                  walletType === 'bonus'
+                    ? 'bg-purple-950/60 border-purple-400 ring-2 ring-purple-400/40 shadow-md'
+                    : 'bg-slate-950 border-slate-800'
+                } ${!isBonusAllowedForLottery ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-purple-300 font-bold uppercase flex items-center gap-1">
+                    Bonus
+                    {!isBonusAllowedForLottery && <Lock className="w-2.5 h-2.5" />}
+                  </span>
+                  {walletType === 'bonus' && <CheckCircle2 className="w-3 h-3 text-purple-400" />}
+                </div>
+                <div className="text-xs font-black text-purple-200 mt-0.5">₹{userBonusBalance.toFixed(2)}</div>
+              </button>
+            </div>
+
+            {!isBonusAllowedForLottery && (
+              <p className="text-[10px] text-amber-400/90 font-mono">
+                🔒 বোনাস ব্যালেন্স শুধুমাত্র <strong>থ্রী সুপার কার ড্র</strong>-তে প্রযোজ্য।
+              </p>
+            )}
+          </div>
+
           {/* Ticket Number Selector */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -99,7 +174,7 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
               <button
                 type="button"
                 onClick={handleQuickPick}
-                className="text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 transition-all"
+                className="text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 transition-all cursor-pointer"
               >
                 <Shuffle className="w-3.5 h-3.5 text-amber-400" />
                 <span>Quick Pick</span>
@@ -196,9 +271,9 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
             </div>
             <div className="flex items-center justify-between pt-1 text-[11px]">
               <span className="text-slate-400 font-sans flex items-center gap-1">
-                <Wallet className="w-3 h-3 text-amber-400" /> Wallet Balance:
+                <Wallet className="w-3 h-3 text-amber-400" /> Available {walletType === 'bonus' ? 'Bonus' : 'Main'} Balance:
               </span>
-              <span className="text-emerald-400 font-bold">₹{userBalance.toLocaleString('en-IN')}</span>
+              <span className="text-emerald-400 font-bold">₹{effectiveBalance.toLocaleString('en-IN')}</span>
             </div>
           </div>
 
@@ -213,7 +288,7 @@ export const TicketBuyModal: React.FC<TicketBuyModalProps> = ({
           <button
             type="button"
             onClick={handleBuy}
-            className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-95"
+            className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-95 cursor-pointer"
           >
             <Sparkles className="w-4 h-4 fill-slate-950" />
             <span>CONFIRM PURCHASE (₹{totalPrice})</span>

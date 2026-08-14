@@ -4,9 +4,11 @@ import {
   RotateCcw, Zap, DollarSign, ChevronRight, ShieldCheck, Play, HelpCircle,
   History, BarChart2, CheckCircle2
 } from 'lucide-react';
-import { User, WalletTransaction } from '../types';
+import { User, WalletTransaction, RouletteConfig } from '../types';
 import { soundFx } from '../utils/audio';
 import { logAnalyticsEvent } from '../utils/analytics';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 
 interface LiveRouletteProps {
@@ -88,6 +90,87 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
   const [countdown, setCountdown] = useState<number>(20);
   const [betsLocked, setBetsLocked] = useState<boolean>(false);
   
+  // Real-time Roulette Configuration from Admin
+  const [rouletteConfig, setRouletteConfig] = useState<RouletteConfig>(() => {
+    try {
+      const cached = localStorage.getItem('bg_roulette_config');
+      if (cached) {
+        return {
+          rtpPercentage: 97.3,
+          houseEdgePercentage: 2.7,
+          rtpMode: 'european_standard',
+          manualNextNumber: 17,
+          manualNextNumberActive: false,
+          minBet: 10,
+          maxBet: 50000,
+          isRouletteEnabled: true,
+          ...JSON.parse(cached)
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached roulette config in LiveRoulette:', e);
+    }
+    return {
+      rtpPercentage: 97.3,
+      houseEdgePercentage: 2.7,
+      rtpMode: 'european_standard',
+      manualNextNumber: 17,
+      manualNextNumberActive: false,
+      minBet: 10,
+      maxBet: 50000,
+      isRouletteEnabled: true
+    };
+  });
+  const rouletteConfigRef = useRef<RouletteConfig>(rouletteConfig);
+  rouletteConfigRef.current = rouletteConfig;
+
+  useEffect(() => {
+    // 1. Listen to Firestore
+    const unsub = onSnapshot(doc(db, 'roulette_config', 'main'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Partial<RouletteConfig>;
+        setRouletteConfig((prev) => {
+          const next = {
+            ...prev,
+            ...data
+          };
+          try {
+            localStorage.setItem('bg_roulette_config', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+      }
+    }, (err) => console.warn('LiveRoulette config sync error:', err.message));
+
+    // 2. Listen to instant local window event
+    const handleLocalConfigChange = (e: any) => {
+      if (e.detail) {
+        setRouletteConfig((prev) => ({
+          ...prev,
+          ...e.detail
+        }));
+      }
+    };
+    window.addEventListener('bg_roulette_config_change', handleLocalConfigChange);
+
+    // 3. Listen to storage changes across tabs
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'bg_roulette_config' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setRouletteConfig((prev) => ({ ...prev, ...parsed }));
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('bg_roulette_config_change', handleLocalConfigChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
   // Wheel Animation States
   const [wheelRotation, setWheelRotation] = useState<number>(0);
   const [ballAngle, setBallAngle] = useState<number>(0);
@@ -130,6 +213,120 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
     const x = Math.sin(roundSeed * 9999 + 12345) * 10000;
     const rand = Math.abs(x - Math.floor(x));
     return WHEEL_NUMBERS[Math.floor(rand * WHEEL_NUMBERS.length)];
+  };
+
+  // Helper to calculate total payout for a candidate pocket based on current placed bets
+  const calculateCandidatePayout = (candidateNum: number, placedBets: PlacedBet[]): number => {
+    const color = getNumberColor(candidateNum);
+    const isEven = candidateNum !== 0 && candidateNum % 2 === 0;
+    const isOdd = candidateNum !== 0 && candidateNum % 2 !== 0;
+    let totalWin = 0;
+    placedBets.forEach((bet) => {
+      if (bet.type.kind === 'number' && bet.type.value === candidateNum) {
+        totalWin += bet.amount * 36;
+      } else if (bet.type.kind === 'color' && bet.type.value === color) {
+        totalWin += bet.amount * 2;
+      } else if (bet.type.kind === 'parity') {
+        if ((bet.type.value === 'even' && isEven) || (bet.type.value === 'odd' && isOdd)) {
+          totalWin += bet.amount * 2;
+        }
+      } else if (bet.type.kind === 'range') {
+        if (
+          (bet.type.value === '1-18' && candidateNum >= 1 && candidateNum <= 18) ||
+          (bet.type.value === '19-36' && candidateNum >= 19 && candidateNum <= 36)
+        ) {
+          totalWin += bet.amount * 2;
+        }
+      } else if (bet.type.kind === 'dozen') {
+        if (
+          (bet.type.value === '1st12' && candidateNum >= 1 && candidateNum <= 12) ||
+          (bet.type.value === '2nd12' && candidateNum >= 13 && candidateNum <= 24) ||
+          (bet.type.value === '3rd12' && candidateNum >= 25 && candidateNum <= 36)
+        ) {
+          totalWin += bet.amount * 3;
+        }
+      } else if (bet.type.kind === 'column') {
+        if (
+          (bet.type.value === 'col1' && candidateNum > 0 && candidateNum % 3 === 1) ||
+          (bet.type.value === 'col2' && candidateNum > 0 && candidateNum % 3 === 2) ||
+          (bet.type.value === 'col3' && candidateNum > 0 && candidateNum % 3 === 0)
+        ) {
+          totalWin += bet.amount * 3;
+        }
+      }
+    });
+    return totalWin;
+  };
+
+  // Outcome resolution engine obeying Admin RTP, House Edge, or Manual Target
+  const getResolvedWinNumber = (roundSeed: number, placedBets: PlacedBet[]): number => {
+    const currentCfg = rouletteConfigRef.current;
+
+    // 1. Manual Next Number Override (Explicit Admin target pocket)
+    if (
+      currentCfg.manualNextNumberActive && 
+      typeof currentCfg.manualNextNumber === 'number' && 
+      currentCfg.manualNextNumber >= 0 && 
+      currentCfg.manualNextNumber <= 36
+    ) {
+      return currentCfg.manualNextNumber;
+    }
+
+    const naturalNum = getSyncedWinNumber(roundSeed);
+    const totalBet = placedBets.reduce((s, b) => s + b.amount, 0);
+
+    // If player placed no bets in this round, return natural physical pocket
+    if (totalBet === 0 || placedBets.length === 0) {
+      return naturalNum;
+    }
+
+    // 2. Target RTP percentage (e.g. 0%, 10%, 20%, 50%, 75%, 97.3%)
+    const targetRtp = typeof currentCfg.rtpPercentage === 'number' 
+      ? Math.max(0, Math.min(100, currentCfg.rtpPercentage))
+      : 97.3;
+
+    // If target RTP is standard European (97.3%) and mode is european_standard, follow natural physics
+    if (targetRtp >= 97.3 && currentCfg.rtpMode === 'european_standard') {
+      return naturalNum;
+    }
+
+    // Calculate exact potential payout for all 37 pockets based on current bets
+    const pocketPayouts = WHEEL_NUMBERS.map((num) => ({
+      number: num,
+      payout: calculateCandidatePayout(num, placedBets)
+    }));
+
+    const zeroPayoutPockets = pocketPayouts.filter((p) => p.payout === 0);
+    const lowPayoutPockets = pocketPayouts.filter((p) => p.payout > 0 && p.payout < totalBet);
+    const losingPockets = [...zeroPayoutPockets, ...lowPayoutPockets];
+    const winningPockets = pocketPayouts.filter((p) => p.payout >= totalBet);
+
+    // Roll random percentage (0.00 to 100.00)
+    const roll = Math.random() * 100;
+
+    // If roll >= targetRtp: House Edge retains the round (Player LOSES on their bet)
+    if (roll >= targetRtp) {
+      if (zeroPayoutPockets.length > 0) {
+        // Pick one of the pockets where user wins ₹0
+        const idx = Math.floor(Math.random() * zeroPayoutPockets.length);
+        return zeroPayoutPockets[idx].number;
+      } else if (losingPockets.length > 0) {
+        const idx = Math.floor(Math.random() * losingPockets.length);
+        return losingPockets[idx].number;
+      } else {
+        // If user covered the whole table, select the pocket with the absolute lowest payout
+        const sorted = [...pocketPayouts].sort((a, b) => a.payout - b.payout);
+        return sorted[0].number;
+      }
+    } else {
+      // Within player RTP allowance (Player WINS)
+      if (winningPockets.length > 0) {
+        const idx = Math.floor(Math.random() * winningPockets.length);
+        return winningPockets[idx].number;
+      }
+    }
+
+    return naturalNum;
   };
 
   // 24/7 Global Time Loop Hook
@@ -208,8 +405,8 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
       setLastBets(currentPlacedBets);
     }
 
-    // Determine winning pocket
-    const targetWinNum = getSyncedWinNumber(roundSeed);
+    // Determine winning pocket according to Admin RTP & Resolution engine
+    const targetWinNum = getResolvedWinNumber(roundSeed, currentPlacedBets);
     const targetPocketIndex = WHEEL_NUMBERS.indexOf(targetWinNum);
     const pocketDeg = 360 / 37;
     const pocketCenterOffset = pocketDeg / 2; // Center of pocket slice
@@ -370,6 +567,16 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
   const handlePlaceBet = (type: BetType, label: string) => {
     if (isSpinning || betsLocked || gamePhase !== 'betting') {
       soundFx.playClick();
+      return;
+    }
+
+    if (rouletteConfig.isRouletteEnabled === false) {
+      alert('The Live Roulette table is currently undergoing scheduled maintenance. Please try again shortly.');
+      return;
+    }
+
+    if (totalBetAmount + selectedChip > (rouletteConfig.maxBet || 50000)) {
+      alert(`Maximum bet limit per round is ₹${(rouletteConfig.maxBet || 50000).toLocaleString('en-IN')}.`);
       return;
     }
 
