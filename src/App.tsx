@@ -228,9 +228,8 @@ export default function App() {
     const attachRealtimeUserListeners = (activeUid: string, claimsAdmin: boolean) => {
       cleanupListeners();
 
-      // 1. Real-time user profile & balance listener
+      // 1. Real-time user profile & balance listener directly on the active user doc
       const userRef = doc(db, 'users', activeUid);
-      let unsubUserAlias: (() => void) | null = null;
 
       unsubUser = onSnapshot(userRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -241,25 +240,6 @@ export default function App() {
             balance: typeof uData.balance === 'number' ? uData.balance : (prev?.balance ?? 100),
             bonusBalance: typeof uData.bonusBalance === 'number' ? uData.bonusBalance : (prev?.bonusBalance ?? 100)
           }));
-
-          // Deduplicate/sync by email if alias doc exists
-          if (uData.email) {
-            const emailClean = uData.email.toLowerCase().trim();
-            const aliasId = `user_${emailClean.replace(/[^a-zA-Z0-9]/g, '_')}`;
-            if (aliasId !== activeUid && !unsubUserAlias) {
-              unsubUserAlias = onSnapshot(doc(db, 'users', aliasId), (aliasSnap) => {
-                if (aliasSnap.exists()) {
-                  const aData = aliasSnap.data() as User;
-                  if (typeof aData.balance === 'number' && aData.balance !== uData.balance) {
-                    const higherBal = Math.max(aData.balance, uData.balance);
-                    setUser((prev) => ({ ...prev, balance: higherBal }));
-                    setDoc(userRef, { balance: higherBal }, { merge: true }).catch(() => {});
-                    setDoc(doc(db, 'users', aliasId), { balance: higherBal }, { merge: true }).catch(() => {});
-                  }
-                }
-              });
-            }
-          }
         }
       }, (err) => console.warn('Real-time user snapshot notice:', err.message));
 

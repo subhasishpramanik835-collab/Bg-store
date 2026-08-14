@@ -174,7 +174,16 @@ export const AdminSmtpManager: React.FC = () => {
         })
       });
 
-      const data = await res.json();
+      let data: any = {};
+      const textResp = await res.text();
+      try {
+        data = JSON.parse(textResp);
+      } catch {
+        data = {
+          success: false,
+          error: `Server returned non-JSON response (${res.status}): ${textResp.slice(0, 120)}`
+        };
+      }
 
       if (data.success) {
         await setDoc(doc(db, 'smtp_accounts', acc.id), {
