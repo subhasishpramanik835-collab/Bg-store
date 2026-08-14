@@ -45,6 +45,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<any>(null);
   const [showVipModal, setShowVipModal] = useState<boolean>(false);
+  const [showBonusInfoModal, setShowBonusInfoModal] = useState<boolean>(false);
 
   const [settings, setSettings] = useState<UserSettings>({
     bgMusicEnabled: user.settings?.bgMusicEnabled ?? true,
@@ -238,13 +239,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </span>
               </div>
 
-              {/* Bonus Wallet (DOWN) */}
-              <div className="bg-slate-900/90 p-3 rounded-xl border border-purple-500/30 flex items-center justify-between gap-3 w-full min-w-0 overflow-hidden">
-                <span className="text-[10px] sm:text-xs text-purple-300 font-mono font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0">
-                  <Gift className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span>BONUS WALLET</span>
-                </span>
-                <span className={`font-black text-purple-300 font-mono tracking-tight shrink min-w-0 text-right truncate ${
+              {/* Bonus Wallet (DOWN) - Interactive Tap */}
+              <div 
+                onClick={() => { soundFx.playClick(); setShowBonusInfoModal(true); }}
+                className="bg-slate-900/90 hover:bg-slate-800/90 p-3 rounded-xl border border-purple-500/30 hover:border-purple-400 flex items-center justify-between gap-3 w-full min-w-0 overflow-hidden cursor-pointer group transition-all"
+                title="Tap to see Bonus Balance Rules & Super Car Ticket Pricing"
+              >
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] sm:text-xs text-purple-300 font-mono font-extrabold uppercase tracking-wider flex items-center gap-1">
+                    <Gift className="w-3.5 h-3.5 text-purple-400 group-hover:animate-bounce shrink-0" />
+                    <span>BONUS WALLET</span>
+                  </span>
+                  <span className="text-[8px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-1 rounded font-mono font-bold">
+                    TAP INFO
+                  </span>
+                </div>
+                <span className={`font-black text-purple-300 font-mono tracking-tight shrink min-w-0 text-right truncate group-hover:scale-105 transition-transform ${
                   `₹${(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 16 
                     ? 'text-xs sm:text-sm' 
                     : `₹${(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`.length > 12 
@@ -836,6 +846,91 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-amber-300 font-mono font-bold text-xs rounded-xl transition-all cursor-pointer"
             >
               CLOSE VIP CLUB
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bonus Wallet Information & Super Car Ticket Pricing Modal */}
+      {showBonusInfoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl overflow-hidden text-white space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-20 -right-20 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                  <Gift className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black font-mono text-purple-200">
+                    BONUS WALLET INFO
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    Real-time Balance & Super Car Rules
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  soundFx.playClick();
+                  setShowBonusInfoModal(false);
+                }}
+                className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Bonus Balance Display */}
+            <div className="p-4 bg-gradient-to-r from-purple-950/80 to-slate-900 rounded-2xl border border-purple-500/30 text-center space-y-1">
+              <span className="text-[10px] font-mono font-bold uppercase text-purple-300 tracking-wider block">
+                Available Bonus Balance
+              </span>
+              <span className="text-2xl sm:text-3xl font-black font-mono text-purple-200 block">
+                ₹{(user.bonusBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
+              <span className="text-[11px] text-purple-300/80 font-mono">
+                🎁 Usable for Three Super Car Draw Games!
+              </span>
+            </div>
+
+            {/* Rule Explanations */}
+            <div className="space-y-2 text-xs font-mono text-slate-300">
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-2.5">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-amber-300 block">Super Car Tickets Purchase:</strong>
+                  <span>You can buy Super Car Draw tickets directly using Bonus Wallet without depositing new money.</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-2.5">
+                <Zap className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-purple-300 block">Real-time Admin Pricing:</strong>
+                  <span>Ticket prices for Bonus purchases and Cash purchases are dynamically controlled by the Admin and updated in real-time.</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start gap-2.5">
+                <Trophy className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-emerald-300 block">Winning Payouts:</strong>
+                  <span>When you win with Bonus Tickets, your winnings are credited directly to your Bonus Wallet for extended gameplay!</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                setShowBonusInfoModal(false);
+              }}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-mono font-bold text-xs rounded-xl shadow-lg shadow-purple-500/20 transition-all cursor-pointer"
+            >
+              GOT IT
             </button>
           </div>
         </div>

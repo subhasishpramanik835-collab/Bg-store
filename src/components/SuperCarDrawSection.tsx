@@ -593,6 +593,11 @@ export const SuperCarDrawSection: React.FC<SuperCarDrawSectionProps> = ({
           userBonusBalance={userBonusBalance}
           bonusRules={bonusRules}
           ticketPrice={config.ticketPrice || 100}
+          bonusTicketPrice={config.bonusTicketPrice}
+          carPrices={config.carPrices}
+          bonusCarPrices={config.bonusCarPrices}
+          carMultipliers={config.carMultipliers}
+          allowBonusPurchase={config.allowBonusPurchase !== false}
           prizeMultiplier={config.prizeMultiplier || 2.8}
           onConfirmBuy={(carColor, quantity, totalCost, walletType) => {
             onConfirmBuyTicket(carColor, quantity, totalCost, scheduleInfo.issueId, scheduleInfo.drawIndex, walletType);

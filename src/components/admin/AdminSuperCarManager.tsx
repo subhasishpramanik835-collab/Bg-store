@@ -1788,16 +1788,126 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
           SUB-TAB 4: ⚙️ HD CAR IMAGES & PRICING CONFIG
          ========================================================= */}
       {activeSubTab === 'images' && (
-        <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200 font-mono">
           
-          {/* SECTION 1: SUPER CAR IMAGE MANAGER */}
+          {/* SECTION 0: DUAL TICKET PRICING ENGINE (REAL CASH VS BONUS BALANCE) */}
+          <div className="p-5 sm:p-6 bg-gradient-to-br from-slate-900 via-slate-950 to-purple-950/40 border border-purple-500/30 rounded-3xl space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                  <Sparkles className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-tight flex items-center gap-2">
+                    <span>SUPER CAR DUAL TICKET PRICING & BONUS ENGINE</span>
+                    <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] px-2 py-0.5 rounded-full font-bold">
+                      LIVE SYNC
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    রিয়েল ক্যাশ ও বোনাস ব্যালেন্স দিয়ে টিকিট কেনার জন্য আলাদা আলাদা প্রাইস সেট করুন।
+                  </p>
+                </div>
+              </div>
+
+              {/* Allow Bonus Purchase Toggle */}
+              <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-2xl border border-purple-500/30">
+                <span className="text-[11px] font-bold text-purple-300">
+                  {config.allowBonusPurchase !== false ? '🎁 BONUS PURCHASE: ACTIVE' : '🔒 BONUS PURCHASE: LOCKED'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    const newSetting = config.allowBonusPurchase === false ? true : false;
+                    onUpdateConfig({ allowBonusPurchase: newSetting });
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                    config.allowBonusPurchase !== false ? 'bg-purple-500' : 'bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      config.allowBonusPurchase !== false ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Global Pricing Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+              {/* 1. Real Cash Ticket Price */}
+              <div className="p-4 bg-slate-950 rounded-2xl border border-amber-500/30 space-y-1.5">
+                <label className="text-[11px] font-bold text-amber-400 uppercase block">
+                  💵 Real Cash Ticket Price (₹)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={config.ticketPrice || 100}
+                  onChange={(e) => {
+                    const val = Math.max(1, Number(e.target.value) || 100);
+                    onUpdateConfig({ ticketPrice: val });
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-amber-300 font-black outline-none focus:border-amber-400"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  ইউজার যখন মেইন ওয়ালেট ব্যালেন্স দিয়ে টিকিট কিনবে
+                </span>
+              </div>
+
+              {/* 2. Bonus Balance Ticket Price */}
+              <div className="p-4 bg-slate-950 rounded-2xl border border-purple-500/30 space-y-1.5">
+                <label className="text-[11px] font-bold text-purple-300 uppercase block">
+                  🎁 Bonus Balance Ticket Price (₹)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={config.bonusTicketPrice || config.ticketPrice || 100}
+                  onChange={(e) => {
+                    const val = Math.max(1, Number(e.target.value) || 100);
+                    onUpdateConfig({ bonusTicketPrice: val });
+                  }}
+                  className="w-full bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-2 text-sm text-purple-200 font-black outline-none focus:border-purple-400"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  ইউজার যখন বোনাস ব্যালেন্স সিলেক্ট করে টিকিট কাটবে
+                </span>
+              </div>
+
+              {/* 3. Global Multiplier */}
+              <div className="p-4 bg-slate-950 rounded-2xl border border-emerald-500/30 space-y-1.5">
+                <label className="text-[11px] font-bold text-emerald-400 uppercase block">
+                  🏆 Winning Prize Multiplier (x)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.1"
+                  value={config.prizeMultiplier || 2.8}
+                  onChange={(e) => {
+                    const val = Math.max(1.1, Number(e.target.value) || 2.8);
+                    onUpdateConfig({ prizeMultiplier: val });
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-emerald-300 font-black outline-none focus:border-emerald-400"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  জিতে গেলে টিকিটের মূল্যের কত গুণ ফেরত পাবে (যেমন 2.8x)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 1: SUPER CAR IMAGE & PER-CAR PRICING MANAGER */}
           <div className="p-5 bg-slate-900 border border-slate-800 rounded-3xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h4 className="text-sm font-black text-amber-400 font-mono uppercase tracking-wider flex items-center gap-2">
+              <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                <span>Super Car HD Image Manager (Red, Black, Yellow)</span>
+                <span>Super Car HD Image & Individual Pricing (Red, Black, Yellow)</span>
               </h4>
-              <span className="text-[10px] text-slate-400 font-mono">Max 15MB • Client WebP Compression</span>
+              <span className="text-[10px] text-slate-400">Max 15MB • Client WebP Compression</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1805,15 +1915,16 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                 const carInfo = getSuperCarInfo(carKey, config);
                 const isCustom = Boolean(config.carImages?.[carKey]);
                 const isUploading = uploadingCar === carKey;
-                const price = config.carPrices?.[carKey] || config.ticketPrice || 100;
+                const realPrice = config.carPrices?.[carKey] || config.ticketPrice || 100;
+                const bonusPrice = config.bonusCarPrices?.[carKey] || config.bonusTicketPrice || realPrice;
                 const multiplier = config.carMultipliers?.[carKey] || config.prizeMultiplier || 2.8;
 
                 return (
                   <div key={carKey} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-black font-mono text-white uppercase">{carInfo.name}</span>
-                        <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border uppercase ${
+                        <span className="text-xs font-black text-white uppercase">{carInfo.name}</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase ${
                           carKey === 'red' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : carKey === 'black' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
                         }`}>
                           {carKey}
@@ -1825,7 +1936,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-transparent"></div>
 
                         {isCustom && (
-                          <span className="absolute top-2 left-2 text-[9px] font-mono font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full">
+                          <span className="absolute top-2 left-2 text-[9px] font-bold bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full">
                             CUSTOM IMAGE
                           </span>
                         )}
@@ -1833,7 +1944,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                         {isUploading && (
                           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-3 space-y-2">
                             <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
-                            <span className="text-xs font-mono font-bold text-amber-300">Uploading {uploadProgress}%</span>
+                            <span className="text-xs font-bold text-amber-300">Uploading {uploadProgress}%</span>
                             <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                               <div className="h-full bg-amber-400 transition-all duration-200" style={{ width: `${uploadProgress}%` }}></div>
                             </div>
@@ -1841,12 +1952,13 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 mt-3 font-mono">
+                      {/* Real Price, Bonus Price & Multiplier */}
+                      <div className="grid grid-cols-3 gap-1.5 mt-3">
                         <div className="space-y-1">
-                          <label className="text-[9px] text-slate-400 font-bold block">Ticket Price (₹)</label>
+                          <label className="text-[9px] text-amber-400 font-bold block truncate">Real (₹)</label>
                           <input
                             type="number"
-                            value={price}
+                            value={realPrice}
                             onChange={(e) => {
                               const val = Number(e.target.value) || 100;
                               onUpdateConfig({ carPrices: { ...config.carPrices, [carKey]: val } });
@@ -1856,7 +1968,20 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[9px] text-slate-400 font-bold block">Multiplier (x)</label>
+                          <label className="text-[9px] text-purple-300 font-bold block truncate">Bonus (₹)</label>
+                          <input
+                            type="number"
+                            value={bonusPrice}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || 100;
+                              onUpdateConfig({ bonusCarPrices: { ...config.bonusCarPrices, [carKey]: val } });
+                            }}
+                            className="w-full bg-slate-900 border border-purple-500/30 rounded-lg px-2 py-1 text-xs text-purple-200 font-bold"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-emerald-400 font-bold block truncate">Odds (x)</label>
                           <input
                             type="number"
                             step="0.1"
@@ -1871,7 +1996,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                       </div>
                     </div>
 
-                    <div className="space-y-2 pt-3 border-t border-slate-900 font-mono">
+                    <div className="space-y-2 pt-3 border-t border-slate-900">
                       <div className="flex gap-2">
                         <label className="flex-1 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md">
                           <Upload className="w-3.5 h-3.5" />

@@ -22,6 +22,8 @@ export interface User {
   regDate: string;
   vipLevel: 'Bronze' | 'Silver' | 'Gold' | 'VIP Platinum';
   vipPoints?: number;
+  isVip?: boolean;
+  vipExpiryDate?: string;
   referralCode: string;
   totalWon: number;
   totalSpent: number;
@@ -69,6 +71,8 @@ export interface BonusBalanceRules {
   allowLuckyWheel: boolean;       // Default: false (Lucky Wheel locked by default)
   defaultBonusAmount: number;     // e.g. 100 on registration
   isBonusSystemActive: boolean;  // Master toggle for bonus balance system
+  superCarRealTicketPrice?: number; // Configurable real ticket price
+  superCarBonusTicketPrice?: number; // Configurable bonus ticket price
   bonusNotice?: string;          // Optional notice/banner text for bonus rules
   updatedAt?: string;
 }
@@ -245,12 +249,14 @@ export interface SuperCarDrawIssue {
 export interface SuperCarConfig {
   enabled: boolean;
   ticketPrice: number;
+  bonusTicketPrice?: number;
+  allowBonusPurchase?: boolean;
   prizeMultiplier: number;
   resultMode: 'auto' | 'manual';
   manualWinner?: SuperCarColor;
   operatingStartHour: number; // 8 (08:00 AM)
   operatingEndHour: number;   // 22 (10:00 PM)
-  drawIntervalMinutes: number; // 30
+  drawIntervalMinutes: number; // 30 or 10
   carImages?: {
     red?: string;
     black?: string;
@@ -261,13 +267,18 @@ export interface SuperCarConfig {
     black?: number;
     yellow?: number;
   };
+  bonusCarPrices?: {
+    red?: number;
+    black?: number;
+    yellow?: number;
+  };
   carMultipliers?: {
     red?: number;
     black?: number;
     yellow?: number;
   };
   lockedSlots?: number[]; // array of slot indices locked by admin
-  manualSlotWinners?: Record<number, SuperCarColor>; // manual winner per slot index 1..29
+  manualSlotWinners?: Record<number | string, SuperCarColor>; // manual winner per slot index 1..84 or issueId
 }
 
 export interface NotificationItem {

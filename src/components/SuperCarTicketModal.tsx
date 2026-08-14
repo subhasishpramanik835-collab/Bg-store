@@ -13,6 +13,11 @@ interface SuperCarTicketModalProps {
   userBonusBalance?: number;
   bonusRules?: BonusBalanceRules;
   ticketPrice: number;
+  bonusTicketPrice?: number;
+  carPrices?: Partial<Record<SuperCarColor, number>>;
+  bonusCarPrices?: Partial<Record<SuperCarColor, number>>;
+  carMultipliers?: Partial<Record<SuperCarColor, number>>;
+  allowBonusPurchase?: boolean;
   prizeMultiplier: number;
   onConfirmBuy: (carColor: SuperCarColor, quantity: number, totalCost: number, walletType: 'main' | 'bonus') => void;
 }
@@ -26,14 +31,20 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
   userBonusBalance = 0,
   bonusRules,
   ticketPrice,
+  bonusTicketPrice,
+  carPrices,
+  bonusCarPrices,
+  carMultipliers,
+  allowBonusPurchase = true,
   prizeMultiplier,
   onConfirmBuy
 }) => {
   const [selectedCar, setSelectedCar] = useState<SuperCarColor>(initialCar);
   const [quantity, setQuantity] = useState<number>(1);
   const [walletType, setWalletType] = useState<'main' | 'bonus'>(() => {
-    // Default to bonus wallet if allowed and sufficient balance, else main
-    if ((bonusRules?.allowSuperCar ?? true) && userBonusBalance >= ticketPrice) {
+    const isBonusAllowed = allowBonusPurchase && (bonusRules?.allowSuperCar ?? true) && (bonusRules?.isBonusSystemActive ?? true);
+    const initialBonusPrice = bonusCarPrices?.[initialCar] || bonusTicketPrice || bonusRules?.superCarBonusTicketPrice || ticketPrice;
+    if (isBonusAllowed && userBonusBalance >= initialBonusPrice) {
       return 'bonus';
     }
     return 'main';
@@ -42,12 +53,18 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isBonusAllowedForSuperCar = (bonusRules?.allowSuperCar ?? true) && (bonusRules?.isBonusSystemActive ?? true);
+  const isBonusAllowedForSuperCar = allowBonusPurchase && (bonusRules?.allowSuperCar ?? true) && (bonusRules?.isBonusSystemActive ?? true);
   const effectiveWalletBalance = walletType === 'bonus' ? userBonusBalance : userBalance;
 
+  // Real vs Bonus Unit Pricing Calculation
+  const realUnitPrice = carPrices?.[selectedCar] || ticketPrice || 100;
+  const effectiveBonusPrice = bonusCarPrices?.[selectedCar] || bonusTicketPrice || bonusRules?.superCarBonusTicketPrice || realUnitPrice;
+  const currentUnitPrice = walletType === 'bonus' ? effectiveBonusPrice : realUnitPrice;
+  const activeMultiplier = carMultipliers?.[selectedCar] || prizeMultiplier || 2.8;
+
   const carInfo = SUPER_CARS[selectedCar];
-  const totalCost = quantity * ticketPrice;
-  const potentialWin = Math.round(totalCost * prizeMultiplier);
+  const totalCost = quantity * currentUnitPrice;
+  const potentialWin = Math.round(totalCost * activeMultiplier);
   const hasEnoughBalance = effectiveWalletBalance >= totalCost;
 
   const handleBuy = () => {
@@ -240,7 +257,7 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
           <div className="text-right font-mono">
             <span className="text-[10px] text-slate-400 block">Payout Odds</span>
             <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
-              {prizeMultiplier}x Win
+              {activeMultiplier}x Win
             </span>
           </div>
         </div>
@@ -251,9 +268,16 @@ export const SuperCarTicketModal: React.FC<SuperCarTicketModalProps> = ({
             <label className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider">
               3. Select Ticket Quantity
             </label>
-            <span className="text-xs font-mono font-bold text-amber-400">
-              ₹{ticketPrice} / ticket
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-xs font-mono font-bold ${walletType === 'bonus' ? 'text-purple-300' : 'text-amber-400'}`}>
+                ₹{currentUnitPrice} / ticket
+              </span>
+              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                walletType === 'bonus' ? 'bg-purple-950 text-purple-300 border-purple-800' : 'bg-amber-950 text-amber-300 border-amber-800'
+              }`}>
+                {walletType === 'bonus' ? 'BONUS' : 'CASH'}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800">

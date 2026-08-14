@@ -16,6 +16,7 @@ import { AdminBannerSliderManager } from './AdminBannerSliderManager';
 import { AdminWheelManager } from './AdminWheelManager';
 import { AdminBonusManager } from './AdminBonusManager';
 import { AdminRouletteManager } from './AdminRouletteManager';
+import { AdminVipManager } from './AdminVipManager';
 import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
@@ -78,7 +79,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'scheduler' | 'payment' | 'wheel' | 'roulette' | 'supercar' | 'bonus' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'vip' | 'bonus' | 'scheduler' | 'payment' | 'wheel' | 'roulette' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
   const [supercarConfig, setSupercarConfig] = useState<any>({
     enabled: true,
     ticketPrice: 100,
@@ -574,6 +575,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'vip', label: 'VIP & Loyalty Club', icon: Crown },
             { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift },
             { id: 'roulette', label: 'Roulette RTP & Edge', icon: Percent },
             { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
@@ -649,6 +651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-1 font-mono">
                 {[
                   { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'vip', label: 'VIP & Loyalty Club Manager', icon: Crown, desc: 'Toggle VIP status, points & perks' },
                   { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift, desc: 'Control which games use bonus balance' },
                   { id: 'roulette', label: 'Live Roulette RTP & House Edge', icon: Percent, desc: 'Set manual RTP %, House Edge & target numbers' },
                   { id: 'scheduler', label: 'Universal Lottery Scheduler', icon: Clock, desc: 'Auto draw slots, timers & preset winners' },
@@ -985,6 +988,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* VIP & LOYALTY CLUB MANAGER */}
+      {adminTab === 'vip' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminVipManager
+            users={allUsers}
+            currentUser={user}
+          />
         </div>
       )}
 
