@@ -421,36 +421,87 @@ export function formatTicketExactDateTime(ticket: { createdAt?: string; purchase
 export function getExactTimestampMs(item: any): number {
   if (!item) return 0;
 
-  // 1. Check numeric createdAt or timestamp
-  if (typeof item.createdAt === 'number') return item.createdAt;
-  if (typeof item.timestamp === 'number') return item.timestamp;
+  // 1. Direct millisecond numbers
+  if (typeof item === 'number' && !isNaN(item) && item > 0) return item;
+  if (typeof item.timestamp === 'number' && !isNaN(item.timestamp) && item.timestamp > 0) return item.timestamp;
+  if (typeof item.createdAt === 'number' && !isNaN(item.createdAt) && item.createdAt > 0) return item.createdAt;
+  if (typeof item.updatedAt === 'number' && !isNaN(item.updatedAt) && item.updatedAt > 0) return item.updatedAt;
 
-  // 2. Check string ISO createdAt or timestamp
-  if (typeof item.createdAt === 'string') {
-    const ms = Date.parse(item.createdAt);
-    if (!isNaN(ms) && ms > 0) return ms;
+  // 2. Firestore Timestamp objects: { seconds, nanoseconds } or { toDate() }
+  if (item.seconds && typeof item.seconds === 'number') {
+    return item.seconds * 1000 + (item.nanoseconds ? Math.floor(item.nanoseconds / 1000000) : 0);
   }
-  if (typeof item.timestamp === 'string') {
-    const ms = Date.parse(item.timestamp);
-    if (!isNaN(ms) && ms > 0) return ms;
+  if (item.timestamp && typeof item.timestamp.seconds === 'number') {
+    return item.timestamp.seconds * 1000 + (item.timestamp.nanoseconds ? Math.floor(item.timestamp.nanoseconds / 1000000) : 0);
   }
-
-  // 3. Check date or purchaseDate string or purchaseTime
-  const dateStr = item.date || item.purchaseDate || item.purchaseTime;
-  if (dateStr) {
-    if (typeof dateStr === 'number') return dateStr;
-    const ms = Date.parse(dateStr);
-    if (!isNaN(ms) && ms > 0) return ms;
-
-    // Try replacing commas e.g. "12/8/2026, 1:48:49 pm"
+  if (item.createdAt && typeof item.createdAt.seconds === 'number') {
+    return item.createdAt.seconds * 1000;
+  }
+  if (item.toDate && typeof item.toDate === 'function') {
     try {
-      const cleaned = String(dateStr).replace(/,/g, '');
-      const msCleaned = Date.parse(cleaned);
-      if (!isNaN(msCleaned) && msCleaned > 0) return msCleaned;
+      const d = item.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+    } catch (_) {}
+  }
+  if (item.timestamp && typeof item.timestamp.toDate === 'function') {
+    try {
+      const d = item.timestamp.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
     } catch (_) {}
   }
 
-  // 4. Extract timestamp embedded in ID (e.g. TXN-1786381249141, TKT-SC-1786381249141)
+  // 3. String parser for dates and timestamps
+  const rawDateStr = item.createdAt || item.timestamp || item.date || item.purchaseDate || item.purchaseTime || (typeof item === 'string' ? item : '');
+  
+  if (rawDateStr && typeof rawDateStr === 'string') {
+    // 3a. Standard ISO format: "2026-08-14T09:12:34.567Z"
+    const parsedIso = Date.parse(rawDateStr);
+    if (!isNaN(parsedIso) && parsedIso > 0) {
+      return parsedIso;
+    }
+
+    // 3b. Indian / UK format "DD/MM/YYYY, HH:MM:SS am/pm" or "DD-MM-YYYY HH:MM:SS"
+    // e.g. "14/08/2026, 2:30:15 pm", "14/8/2026", "14-08-2026 14:30"
+    const dmyMatch = rawDateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?)?/i);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      let hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+      const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+      const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+      const ampm = dmyMatch[7]?.toLowerCase();
+
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+  }
+
+  // 4. Check if item has purchaseDate + purchaseTime combination
+  if (item.purchaseDate && item.purchaseTime && typeof item.purchaseDate === 'string' && typeof item.purchaseTime === 'string') {
+    const combined = `${item.purchaseDate} ${item.purchaseTime}`;
+    const dmyMatch = combined.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?)?/i);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      let hours = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+      const minutes = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+      const seconds = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+      const ampm = dmyMatch[7]?.toLowerCase();
+
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+
+      const d = new Date(year, month, day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+  }
+
+  // 5. Embedded timestamp in ID (e.g. TXN-1786381249141, TKT-1786381249141, DEP-1786381249141, WTH-1786381249141)
   if (item.id) {
     const matches = String(item.id).match(/\d{10,15}/);
     if (matches && matches[0]) {

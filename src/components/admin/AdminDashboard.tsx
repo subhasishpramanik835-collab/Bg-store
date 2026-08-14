@@ -159,38 +159,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [txStatusFilter, setTxStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [txTypeFilter, setTxTypeFilter] = useState<'all' | 'deposits' | 'withdrawals'>('all');
 
-  const filteredDeposits = deposits.filter((dep) => {
-    const query = txSearchTerm.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      dep.id.toLowerCase().includes(query) ||
-      dep.userId.toLowerCase().includes(query) ||
-      (dep.utr && dep.utr.toLowerCase().includes(query)) ||
-      (dep.userName && dep.userName.toLowerCase().includes(query)) ||
-      (dep.userPhone && dep.userPhone.toLowerCase().includes(query));
+  const filteredDeposits = sortChronologicalNewestFirst(
+    deposits.filter((dep) => {
+      const query = txSearchTerm.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        dep.id.toLowerCase().includes(query) ||
+        dep.userId.toLowerCase().includes(query) ||
+        (dep.utr && dep.utr.toLowerCase().includes(query)) ||
+        (dep.userName && dep.userName.toLowerCase().includes(query)) ||
+        (dep.userPhone && dep.userPhone.toLowerCase().includes(query));
 
-    const matchesStatus = txStatusFilter === 'all' || dep.status === txStatusFilter;
-    const matchesType = txTypeFilter === 'all' || txTypeFilter === 'deposits';
+      const matchesStatus = txStatusFilter === 'all' || dep.status === txStatusFilter;
+      const matchesType = txTypeFilter === 'all' || txTypeFilter === 'deposits';
 
-    return matchesSearch && matchesStatus && matchesType;
-  });
+      return matchesSearch && matchesStatus && matchesType;
+    })
+  );
 
-  const filteredWithdrawals = withdrawals.filter((wth) => {
-    const query = txSearchTerm.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      wth.id.toLowerCase().includes(query) ||
-      wth.userId.toLowerCase().includes(query) ||
-      (wth.fullName && wth.fullName.toLowerCase().includes(query)) ||
-      (wth.userPhone && wth.userPhone.toLowerCase().includes(query)) ||
-      (wth.upiId && wth.upiId.toLowerCase().includes(query)) ||
-      (wth.accountNumber && wth.accountNumber.toLowerCase().includes(query));
+  const filteredWithdrawals = sortChronologicalNewestFirst(
+    withdrawals.filter((wth) => {
+      const query = txSearchTerm.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        wth.id.toLowerCase().includes(query) ||
+        wth.userId.toLowerCase().includes(query) ||
+        (wth.fullName && wth.fullName.toLowerCase().includes(query)) ||
+        (wth.userPhone && wth.userPhone.toLowerCase().includes(query)) ||
+        (wth.upiId && wth.upiId.toLowerCase().includes(query)) ||
+        (wth.accountNumber && wth.accountNumber.toLowerCase().includes(query));
 
-    const matchesStatus = txStatusFilter === 'all' || wth.status === txStatusFilter;
-    const matchesType = txTypeFilter === 'all' || txTypeFilter === 'withdrawals';
+      const matchesStatus = txStatusFilter === 'all' || wth.status === txStatusFilter;
+      const matchesType = txTypeFilter === 'all' || txTypeFilter === 'withdrawals';
 
-    return matchesSearch && matchesStatus && matchesType;
-  });
+      return matchesSearch && matchesStatus && matchesType;
+    })
+  );
 
   // Theme & Extended Admin Controls
   const [isAdminLightMode, setIsAdminLightMode] = useState<boolean>(false);
@@ -890,7 +894,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Stream List */}
             <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
-              {[
+              {sortChronologicalNewestFirst([
                 ...deposits.map(d => ({
                   id: `dep-${d.id}`,
                   type: 'deposits',
@@ -898,6 +902,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   user: d.userName || 'User',
                   sub: `UTR: ${d.utr || (d as any).utrNumber || 'N/A'} | Method: ${(d.method || (d as any).paymentMethod || 'upi').toString().toUpperCase()}`,
                   time: d.date || '',
+                  createdAt: d.createdAt || d.date,
                   status: d.status,
                   icon: ArrowDownCircle,
                   color: d.status === 'approved' ? 'text-emerald-400' : d.status === 'pending' ? 'text-amber-400' : 'text-rose-400'
@@ -909,6 +914,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   user: w.userName || 'User',
                   sub: `Bank/Holder: ${w.fullName || (w as any).bankName || 'Bank'} | Acc/UPI: ${w.accountNumber || w.upiId || 'N/A'}`,
                   time: w.date || '',
+                  createdAt: w.createdAt || w.date,
                   status: w.status,
                   icon: ArrowUpCircle,
                   color: w.status === 'approved' ? 'text-emerald-400' : w.status === 'pending' ? 'text-amber-400' : 'text-rose-400'
@@ -920,11 +926,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   user: (t as any).userName || 'Player',
                   sub: `Numbers: ${(t.selectedNumbers || (t as any).numbers || []).join(', ')} | Ticket Price: ₹${t.price}`,
                   time: t.purchaseDate || '',
+                  createdAt: t.createdAt || t.purchaseDate,
                   status: t.status,
                   icon: Trophy,
                   color: t.status === 'win' ? 'text-yellow-400' : 'text-slate-300'
                 }))
-              ]
+              ])
                 .filter(item => activityFilter === 'all' || item.type === activityFilter)
                 .slice(0, 15)
                 .map((item) => {
@@ -1400,7 +1407,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ) : (
               <>
                 <div className="space-y-3">
-                  {tickets.slice((ticketPage - 1) * ticketPageSize, ticketPage * ticketPageSize).map((t) => {
+                  {sortChronologicalNewestFirst(tickets).slice((ticketPage - 1) * ticketPageSize, ticketPage * ticketPageSize).map((t) => {
                     const playerObj = allUsers.find(u => u.id === t.userId);
                     const playerName = (t as any).userName || playerObj?.name || 'BETGURU Player';
                     const playerPhone = (t as any).userPhone || playerObj?.phone || 'N/A';

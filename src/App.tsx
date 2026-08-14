@@ -538,12 +538,27 @@ export default function App() {
       localStorage.removeItem('betguru_tickets');
       localStorage.removeItem('betguru_transactions');
       localStorage.removeItem('betguru_notifications');
-      await signOut(auth);
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.warn('SignOut non-blocking error:', err);
+      }
       setCurrentUser(null);
       setUser(null as any);
+      setUserHasAdminClaim(false);
+      setIsAdminMode(false);
+      setIsDepositOpen(false);
+      setIsWithdrawOpen(false);
+      setIsNotificationsOpen(false);
+      setActiveTab('lottery');
+      setAuthLoading(false);
       resetUserDataState();
+      window.dispatchEvent(new Event('betguru_direct_auth_changed'));
     } catch (e) {
       console.error('Error signing out:', e);
+      setCurrentUser(null);
+      setUser(null as any);
+      setAuthLoading(false);
     }
   };
 
@@ -771,13 +786,13 @@ export default function App() {
     setTickets(sortChronologicalNewestFirst(updatedTickets));
 
     if (totalWonAmount > 0) {
-      const newBal = user.balance + totalWonAmount;
-      setUser((prev) => ({ ...prev, balance: newBal }));
+      const newBal = (user?.balance || 0) + totalWonAmount;
+      setUser((prev) => prev ? ({ ...prev, balance: newBal }) : prev);
       if (user?.id) persistUserBalance(user.id, newBal);
 
       const winTx: WalletTransaction = {
         id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
-        userId: user.id,
+        userId: user?.id || 'anonymous',
         type: 'ticket_win',
         amount: totalWonAmount,
         description: `🏆 WON Super Car Draw Jackpot (${winningCar.toUpperCase()} Car Winner!)`,
@@ -873,14 +888,15 @@ export default function App() {
 
         if (totalNewWonAmount > 0) {
           setUser((prev) => {
-            const newBal = prev.balance + totalNewWonAmount;
+            if (!prev) return prev;
+            const newBal = (prev.balance || 0) + totalNewWonAmount;
             if (prev.id) persistUserBalance(prev.id, newBal);
             return { ...prev, balance: newBal };
           });
 
           const winTx: WalletTransaction = {
             id: `TXN-SC-WIN-${Date.now().toString().slice(-4)}`,
-            userId: user.id || 'anonymous',
+            userId: user?.id || 'anonymous',
             type: 'ticket_win',
             amount: totalNewWonAmount,
             description: `🏆 Auto Payout: WON Super Car Draw (${lastWonCar.toUpperCase()} Winner!)`,
@@ -900,7 +916,7 @@ export default function App() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [tickets, supercarPastDraws, supercarConfig, user.id]);
+  }, [tickets, supercarPastDraws, supercarConfig, user?.id]);
 
   // Audio mute toggle
   const handleToggleMute = () => {
@@ -949,13 +965,14 @@ export default function App() {
               if (isWin) {
                 // Auto add funds to user wallet
                 setUser((prev) => {
-                  const currentBal = prev?.balance || 0;
+                  if (!prev) return prev;
+                  const currentBal = prev.balance || 0;
                   const newBal = currentBal + wonAmount;
-                  if (prev?.id) persistUserBalance(prev.id, newBal);
+                  if (prev.id) persistUserBalance(prev.id, newBal);
                   return {
                     ...prev,
                     balance: newBal,
-                    totalWon: (prev?.totalWon || 0) + wonAmount
+                    totalWon: (prev.totalWon || 0) + wonAmount
                   };
                 });
 
@@ -1029,13 +1046,15 @@ export default function App() {
 
   // Handle Deposit Submission
   const handleDepositSubmit = (amount: number, method: PaymentMethodType, utr: string, screenshotUrl: string) => {
-    logAnalyticsEvent('deposit_attempt', { amount, method, utr }, user.id, user.email);
+    if (user) {
+      logAnalyticsEvent('deposit_attempt', { amount, method, utr }, user.id, user.email);
+    }
 
     const newDep: DepositRequest = {
       id: `DEP-${Math.floor(1000 + Math.random() * 9000)}`,
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
+      userId: user?.id || 'anonymous',
+      userName: user?.name || 'User',
+      userPhone: user?.phone || '',
       amount,
       method,
       utr,
@@ -1049,14 +1068,16 @@ export default function App() {
     persistDeposit(newDep);
 
     // Send real-time SMTP Email notification
-    notifyDepositSubmitted(user.email, user.name, amount, method, utr).catch((err) =>
-      console.warn('Deposit submission email error:', err)
-    );
+    if (user?.email) {
+      notifyDepositSubmitted(user.email, user.name || 'User', amount, method, utr).catch((err) =>
+        console.warn('Deposit submission email error:', err)
+      );
+    }
 
     // Add user notification
     const depNtf: NotificationItem = {
       id: `NTF-${Date.now()}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       title: '⏳ Deposit Submitted under Verification',
       message: `Your deposit request of ₹${amount} via ${(method || 'UPI').toString().toUpperCase()} (UTR: ${utr}) is under verification.`,
       type: 'deposit',
@@ -1099,19 +1120,19 @@ export default function App() {
       }, { merge: true });
 
       // Dispatch real-time email notification
-      const targetUserEmail = targetSnap.exists() ? (targetSnap.data()?.email || dep.userName) : user.email;
+      const targetUserEmail = targetSnap.exists() ? (targetSnap.data()?.email || dep.userName) : (user?.email || dep.userName);
       const targetUserName = targetSnap.exists() ? (targetSnap.data()?.name || dep.userName) : dep.userName;
       notifyDepositApproved(targetUserEmail, targetUserName, dep.amount).catch((err) =>
         console.warn('Deposit approved email error:', err)
       );
 
       // Only update local `user` state if the admin is approving their own deposit
-      if (user.id === dep.userId) {
-        setUser((prev) => ({
+      if (user?.id === dep.userId) {
+        setUser((prev) => prev ? ({
           ...prev,
           balance: newBal,
           spinCredits: (prev.spinCredits || 0) + spinsEarned
-        }));
+        }) : prev);
       }
     } catch (err) {
       console.error('Error updating target user balance upon deposit approval:', err);
@@ -1196,20 +1217,25 @@ export default function App() {
 
   // Handle Withdrawal Submission
   const handleWithdrawSubmit = (amount: number, fullName: string, accountNumber: string, ifscCode: string, upiId: string) => {
-    logAnalyticsEvent('withdrawal_submission', { amount, fullName, accountNumber: `••••${accountNumber.slice(-4)}`, upiId }, user.id, user.email);
+    if (user) {
+      logAnalyticsEvent('withdrawal_submission', { amount, fullName, accountNumber: `••••${accountNumber.slice(-4)}`, upiId }, user.id, user.email);
+    }
 
-    const newBal = Math.max(0, user.balance - amount);
-    setUser((prev) => ({
+    const currentBal = user?.balance || 0;
+    const newBal = Math.max(0, currentBal - amount);
+    setUser((prev) => prev ? ({
       ...prev,
       balance: newBal
-    }));
-    persistUserBalance(user.id, newBal);
+    }) : prev);
+    if (user?.id) {
+      persistUserBalance(user.id, newBal);
+    }
 
     const newWth: WithdrawalRequest = {
       id: `WTH-${Math.floor(1000 + Math.random() * 9000)}`,
-      userId: user.id,
-      userName: user.name,
-      userPhone: user.phone,
+      userId: user?.id || 'anonymous',
+      userName: user?.name || 'User',
+      userPhone: user?.phone || '',
       amount,
       fullName,
       accountNumber,
@@ -1224,14 +1250,16 @@ export default function App() {
     persistWithdrawal(newWth);
 
     // Send real-time withdrawal submission email
-    notifyWithdrawalSubmitted(user.email, user.name, amount, accountNumber.slice(-4)).catch((err) =>
-      console.warn('Withdrawal submission email error:', err)
-    );
+    if (user?.email) {
+      notifyWithdrawalSubmitted(user.email, user.name || 'User', amount, accountNumber.slice(-4)).catch((err) =>
+        console.warn('Withdrawal submission email error:', err)
+      );
+    }
 
     // Add wallet ledger tx
     const wthTx: WalletTransaction = {
       id: `TXN-WTH-${Date.now().toString().slice(-4)}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       type: 'withdrawal',
       amount: -amount,
       description: `Withdrawal Request to A/C ending ${accountNumber.slice(-4)}`,
@@ -1255,13 +1283,15 @@ export default function App() {
 
       // Dispatch real-time withdrawal approval email
       getDoc(doc(db, 'users', wth.userId)).then((snap) => {
-        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : user.email;
+        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : (user?.email || wth.userName);
         const targetName = snap.exists() ? (snap.data()?.name || wth.userName) : wth.userName;
         notifyWithdrawalApproved(targetEmail, targetName, wth.amount, wth.accountNumber).catch((err) =>
           console.warn('Withdrawal approved email error:', err)
         );
       }).catch(() => {
-        notifyWithdrawalApproved(user.email, wth.userName, wth.amount, wth.accountNumber).catch(() => {});
+        if (user?.email) {
+          notifyWithdrawalApproved(user.email, wth.userName, wth.amount, wth.accountNumber).catch(() => {});
+        }
       });
 
       setTransactions((prev) =>
@@ -1298,13 +1328,15 @@ export default function App() {
 
       // Dispatch real-time withdrawal rejection email
       getDoc(doc(db, 'users', wth.userId)).then((snap) => {
-        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : user.email;
+        const targetEmail = snap.exists() ? (snap.data()?.email || wth.userName) : (user?.email || wth.userName);
         const targetName = snap.exists() ? (snap.data()?.name || wth.userName) : wth.userName;
         notifyWithdrawalRejected(targetEmail, targetName, wth.amount, reason).catch((err) =>
           console.warn('Withdrawal rejected email error:', err)
         );
       }).catch(() => {
-        notifyWithdrawalRejected(user.email, wth.userName, wth.amount, reason).catch(() => {});
+        if (user?.email) {
+          notifyWithdrawalRejected(user.email, wth.userName, wth.amount, reason).catch(() => {});
+        }
       });
 
       // Refund user balance in Firestore
@@ -1319,11 +1351,11 @@ export default function App() {
         const newBal = targetUserBal + wth.amount;
         await persistUserBalance(wth.userId, newBal);
 
-        if (user.id === wth.userId) {
-          setUser((prev) => ({
+        if (user?.id === wth.userId) {
+          setUser((prev) => prev ? ({
             ...prev,
             balance: newBal
-          }));
+          }) : prev);
         }
       } catch (err) {
         console.error('Error refunding target user balance upon withdrawal rejection:', err);
@@ -1353,14 +1385,18 @@ export default function App() {
 
   // Handle Ticket Purchase Confirmation
   const handleConfirmTicketBuy = (draw: LotteryDraw, ticketDigitsArray: number[][], totalPrice: number) => {
-    logAnalyticsEvent('ticket_buy', { gameType: 'lottery', drawId: draw.id, drawTitle: draw.title, ticketCount: ticketDigitsArray.length, totalPrice }, user.id, user.email);
+    if (user) {
+      logAnalyticsEvent('ticket_buy', { gameType: 'lottery', drawId: draw.id, drawTitle: draw.title, ticketCount: ticketDigitsArray.length, totalPrice }, user.id, user.email);
+    }
 
     // Award VIP Points (1 Point per ₹10 spent)
     const earnedVipPts = Math.floor(totalPrice / 10);
 
     // Deduct user balance & add VIP Points
-    const newBal = Math.max(0, user.balance - totalPrice);
+    const currentBal = user?.balance || 0;
+    const newBal = Math.max(0, currentBal - totalPrice);
     setUser((prev) => {
+      if (!prev) return prev;
       const newPts = (prev.vipPoints || 120) + earnedVipPts;
       let newLevel = prev.vipLevel;
       if (newPts >= 10000) newLevel = 'VIP Platinum';
@@ -1370,7 +1406,7 @@ export default function App() {
       return {
         ...prev,
         balance: newBal,
-        totalSpent: prev.totalSpent + totalPrice,
+        totalSpent: (prev.totalSpent || 0) + totalPrice,
         vipPoints: newPts,
         vipLevel: newLevel
       };
@@ -1382,7 +1418,7 @@ export default function App() {
     const newTickets: PurchasedTicket[] = ticketDigitsArray.map((digits) => ({
       id: `TCK-${Math.floor(100000 + Math.random() * 900000)}`,
       batchId: batchId,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       drawId: draw.id,
       drawTitle: draw.title,
       ticketNumber: digits.join(' '),
@@ -1399,7 +1435,7 @@ export default function App() {
     // Log transaction
     const tx: WalletTransaction = {
       id: `TXN-BUY-${Date.now().toString().slice(-4)}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       type: 'ticket_buy',
       amount: -totalPrice,
       description: `Purchased ${ticketDigitsArray.length} Ticket(s) - ${draw.title} (+${earnedVipPts} VIP Pts)`,
@@ -1420,23 +1456,26 @@ export default function App() {
 
   // Handle Weekly VIP Bonus Claim
   const handleClaimVipBonus = (bonusAmount: number) => {
-    const newBal = user.balance + bonusAmount;
-    setUser((prev) => ({
+    const currentBal = user?.balance || 0;
+    const newBal = currentBal + bonusAmount;
+    setUser((prev) => prev ? ({
       ...prev,
       balance: newBal
-    }));
+    }) : prev);
     if (user?.id) persistUserBalance(user.id, newBal);
 
-    notifyBonusCredited(user.email, user.name, bonusAmount, `Weekly VIP Club Bonus (${user.vipLevel})`).catch((err) =>
-      console.warn('VIP bonus email error:', err)
-    );
+    if (user?.email) {
+      notifyBonusCredited(user.email, user.name || 'VIP Member', bonusAmount, `Weekly VIP Club Bonus (${user.vipLevel || 'Member'})`).catch((err) =>
+        console.warn('VIP bonus email error:', err)
+      );
+    }
 
     const vipTx: WalletTransaction = {
       id: `TXN-VIP-${Date.now().toString().slice(-4)}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       type: 'vip_bonus',
       amount: bonusAmount,
-      description: `Weekly VIP Club Cash Bonus (${user.vipLevel})`,
+      description: `Weekly VIP Club Cash Bonus (${user?.vipLevel || 'VIP'})`,
       status: 'completed',
       date: new Date().toLocaleString('en-IN'),
       createdAt: new Date().toISOString()
@@ -1446,7 +1485,7 @@ export default function App() {
 
     const ntf: NotificationItem = {
       id: `NTF-${Date.now()}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       title: `👑 Weekly VIP Bonus (₹${bonusAmount})`,
       message: `You claimed your weekly VIP bonus payout of ₹${bonusAmount}!`,
       type: 'win',
@@ -1459,16 +1498,17 @@ export default function App() {
 
   // Handle Claim Spin Reward
   const handleClaimWheelReward = (rewardAmount: number) => {
-    const newBal = user.balance + rewardAmount;
-    const currentCredits = user.spinCredits ?? 0;
+    const currentBal = user?.balance || 0;
+    const newBal = currentBal + rewardAmount;
+    const currentCredits = user?.spinCredits ?? 0;
     const newCredits = Math.max(0, currentCredits - 1);
 
-    setUser((prev) => ({
+    setUser((prev) => prev ? ({
       ...prev,
       balance: newBal,
       spinCredits: newCredits,
       lastSpinTime: Date.now()
-    }));
+    }) : prev);
 
     if (user?.id) {
       setDoc(doc(db, 'users', user.id), {
@@ -1478,13 +1518,15 @@ export default function App() {
       }, { merge: true }).catch((err) => console.warn('Persist spin credit error:', err));
     }
 
-    notifyBonusCredited(user.email, user.name, rewardAmount, 'Daily Lucky Spin Wheel Bonus').catch((err) =>
-      console.warn('Wheel bonus email error:', err)
-    );
+    if (user?.email) {
+      notifyBonusCredited(user.email, user.name || 'Player', rewardAmount, 'Daily Lucky Spin Wheel Bonus').catch((err) =>
+        console.warn('Wheel bonus email error:', err)
+      );
+    }
 
     const wheelTx: WalletTransaction = {
       id: `TXN-WHEEL-${Date.now().toString().slice(-4)}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       type: 'wheel_bonus',
       amount: rewardAmount,
       description: `Lucky Wheel Bonus Reward`,
@@ -1497,7 +1539,7 @@ export default function App() {
 
     const ntf: NotificationItem = {
       id: `NTF-${Date.now()}`,
-      userId: user.id,
+      userId: user?.id || 'anonymous',
       title: `🎁 Lucky Wheel Cash Bonus (₹${rewardAmount})`,
       message: `You won ₹${rewardAmount} from the Daily Lucky Wheel!`,
       type: 'win',
@@ -1546,7 +1588,7 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
+  if (!currentUser || !user) {
     return <AuthScreen />;
   }
 

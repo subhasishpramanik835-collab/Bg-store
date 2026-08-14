@@ -1664,7 +1664,7 @@ export const AdminSuperCarManager: React.FC<AdminSuperCarManagerProps> = ({ conf
                       const exactDateTimeStr = formatTicketExactDateTime(firstTicket);
 
                       return (
-                        <div key={ticket.id} className="p-4 bg-slate-950 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl transition-all font-mono">
+                        <div key={batch.groupKey} className="p-4 bg-slate-950 border border-slate-800 hover:border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl transition-all font-mono">
                           
                           {/* Left Block: Car Photo + Ticket Info */}
                           <div className="flex items-start sm:items-center gap-3.5 flex-1 w-full">

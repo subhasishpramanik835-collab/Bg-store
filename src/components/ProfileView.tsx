@@ -6,6 +6,7 @@ import { WalletLedger } from './WalletLedger';
 import { VIP_TIERS, getNextTierInfo, calculateVipLevel } from '../utils/vip';
 import confetti from 'canvas-confetti';
 import { VoucherGenerator } from './VoucherGenerator';
+import { sortChronologicalNewestFirst } from '../utils/supercar';
 
 interface ProfileViewProps {
   user: User;
@@ -69,19 +70,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  const rouletteTx = transactions.filter(
-    (t) => t.type === 'roulette_bet' || t.type === 'roulette_win' || t.description.toLowerCase().includes('roulette')
+  const rouletteTx = sortChronologicalNewestFirst(
+    transactions.filter(
+      (t) => t.type === 'roulette_bet' || t.type === 'roulette_win' || t.description.toLowerCase().includes('roulette')
+    )
   );
-  const bonusTx = transactions.filter(
-    (t) =>
-      t.type === 'wheel_bonus' ||
-      t.type === 'admin_bonus' ||
-      t.type === 'vip_bonus' ||
-      t.type === 'admin_deduction' ||
-      t.description.toLowerCase().includes('bonus') ||
-      t.description.toLowerCase().includes('reward') ||
-      t.description.toLowerCase().includes('voucher') ||
-      t.description.toLowerCase().includes('cashback')
+  const bonusTx = sortChronologicalNewestFirst(
+    transactions.filter(
+      (t) =>
+        t.type === 'wheel_bonus' ||
+        t.type === 'admin_bonus' ||
+        t.type === 'vip_bonus' ||
+        t.type === 'admin_deduction' ||
+        t.description.toLowerCase().includes('bonus') ||
+        t.description.toLowerCase().includes('reward') ||
+        t.description.toLowerCase().includes('voucher') ||
+        t.description.toLowerCase().includes('cashback')
+    )
   );
 
   const isAdminUser = user.email?.toLowerCase() === 'asishp92@gmail.com' || user.role === 'admin';
@@ -121,10 +126,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  const filteredTickets = tickets.filter(t => {
-    if (ticketFilter === 'all') return true;
-    return t.status === ticketFilter;
-  });
+  const filteredTickets = sortChronologicalNewestFirst(
+    tickets.filter(t => {
+      if (ticketFilter === 'all') return true;
+      return t.status === ticketFilter;
+    })
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-24">
