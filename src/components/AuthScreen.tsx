@@ -6,10 +6,11 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signInWithPopup, 
+  signInWithCredential,
   GoogleAuthProvider,
   updateProfile
 } from 'firebase/auth';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, firebaseConfig, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { soundFx } from '../utils/audio';
 import { sendSmtpOtp, sendSmtpEmail } from '../utils/emailNotifier';
@@ -261,68 +262,119 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
     }
   };
 
-  // Google Auth Handler
+  // Common Firebase User Profile Sync Helper
+  const syncGoogleUserProfile = async (user: any) => {
+    const isAdminEmail = user.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || user.email?.toLowerCase() === 'asishp92@gmail.com';
+
+    // Sync user profile in Firestore
+    const userRef = doc(db, 'users', user.uid);
+    let userSnap: any = null;
+    try {
+      userSnap = await getDoc(userRef);
+    } catch (docErr) {
+      console.warn('AuthScreen getDoc offline or network delay:', docErr);
+    }
+
+    if (!userSnap || !userSnap.exists()) {
+      const newUserDoc = {
+        id: user.uid,
+        name: user.displayName || 'BETGURU Player',
+        phone: user.phoneNumber || '+91 9876543210',
+        email: user.email || '',
+        avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        balance: 100, // Welcome Bonus
+        bonusBalance: 100,
+        totalWon: 0,
+        totalSpent: 0,
+        referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
+        totalReferrals: 0,
+        lastSpinTime: 0,
+        status: 'active',
+        role: isAdminEmail ? 'admin' : 'user',
+        vipLevel: 'Bronze',
+        vipPoints: 120,
+        regDate: new Date().toLocaleDateString('en-IN'),
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('setDoc newUserDoc offline:', err));
+    } else {
+      const existingData = userSnap.data();
+      await setDoc(userRef, { 
+        avatarUrl: user.photoURL || existingData?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        name: user.displayName || existingData?.name || 'BETGURU Player',
+        email: user.email || existingData?.email || '',
+        role: isAdminEmail ? 'admin' : (existingData?.role || 'user'),
+        lastLogin: new Date().toISOString()
+      }, { merge: true }).catch((err) => console.warn('setDoc user login merge offline:', err));
+    }
+
+    soundFx.playCoin();
+    if (onSuccess) onSuccess();
+  };
+
+  // Google Auth Handler (Dual-Mode: Google Identity Services Token Flow + Firebase Popup Fallback)
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
       setError(null);
       soundFx.playClick();
-      
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        prompt: 'select_account'
-      });
-      auth.useDeviceLanguage();
 
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      let authenticatedUser: any = null;
 
-      const isAdminEmail = user.email?.toLowerCase() === 'subhasishpramanik835@gmail.com' || user.email?.toLowerCase() === 'asishp92@gmail.com';
+      // Method 1: Google Identity Services (GIS) Token Flow
+      // Directly talks to accounts.google.com without cross-origin sessionStorage issues on mobile
+      const oAuthClientId = firebaseConfig.oAuthClientId;
+      if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2 && oAuthClientId) {
+        try {
+          const tokenResponse: any = await new Promise((resolve, reject) => {
+            const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+              client_id: oAuthClientId,
+              scope: 'email profile openid',
+              prompt: 'select_account',
+              callback: (resp: any) => {
+                if (resp.error) {
+                  reject(resp);
+                } else {
+                  resolve(resp);
+                }
+              },
+              error_callback: (err: any) => {
+                reject(err);
+              }
+            });
+            tokenClient.requestAccessToken();
+          });
 
-      // Sync user profile in Firestore
-      const userRef = doc(db, 'users', user.uid);
-      let userSnap: any = null;
-      try {
-        userSnap = await getDoc(userRef);
-      } catch (docErr) {
-        console.warn('AuthScreen getDoc offline or network delay:', docErr);
+          if (tokenResponse?.access_token) {
+            const credential = GoogleAuthProvider.credential(null, tokenResponse.access_token);
+            const userCred = await signInWithCredential(auth, credential);
+            authenticatedUser = userCred.user;
+          }
+        } catch (gisError: any) {
+          console.warn('GIS Token Flow warning, falling back to Firebase popup:', gisError);
+          if (gisError?.type === 'popup_closed' || gisError?.error === 'popup_closed_by_user') {
+            setError('Google Sign-in window was closed.');
+            setLoading(false);
+            return;
+          }
+        }
       }
 
-      if (!userSnap || !userSnap.exists()) {
-        const newUserDoc = {
-          id: user.uid,
-          name: user.displayName || 'BETGURU Player',
-          phone: user.phoneNumber || '+91 9876543210',
-          email: user.email || '',
-          avatarUrl: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-          balance: 100, // Welcome Bonus
-          bonusBalance: 100,
-          totalWon: 0,
-          totalSpent: 0,
-          referralCode: `BG${Math.floor(100000 + Math.random() * 900000)}`,
-          totalReferrals: 0,
-          lastSpinTime: 0,
-          status: 'active',
-          role: isAdminEmail ? 'admin' : 'user',
-          vipLevel: 'Bronze',
-          vipPoints: 120,
-          regDate: new Date().toLocaleDateString('en-IN'),
-          createdAt: new Date().toISOString()
-        };
-        await setDoc(userRef, newUserDoc, { merge: true }).catch((err) => console.warn('setDoc newUserDoc offline:', err));
-      } else {
-        const existingData = userSnap.data();
-        await setDoc(userRef, { 
-          avatarUrl: user.photoURL || existingData?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-          name: user.displayName || existingData?.name || 'BETGURU Player',
-          email: user.email || existingData?.email || '',
-          role: isAdminEmail ? 'admin' : (existingData?.role || 'user'),
-          lastLogin: new Date().toISOString()
-        }, { merge: true }).catch((err) => console.warn('setDoc user login merge offline:', err));
+      // Method 2: Standard Firebase signInWithPopup fallback
+      if (!authenticatedUser) {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({
+          prompt: 'select_account'
+        });
+        auth.useDeviceLanguage();
+
+        const result = await signInWithPopup(auth, provider);
+        authenticatedUser = result.user;
       }
 
-      soundFx.playCoin();
-      if (onSuccess) onSuccess();
+      if (authenticatedUser) {
+        await syncGoogleUserProfile(authenticatedUser);
+      }
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
       const msg = err?.message || String(err);
@@ -333,8 +385,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
         err?.code === 'auth/popup-blocked' ||
         err?.code === 'auth/cancelled-popup-request'
       ) {
-        setError('ব্রাউজারের থার্ড-পার্টি কুকি বা স্টোরেজ সীমাবদ্ধতার (Storage Partitioning) কারণে গুগল পপ-আপ ব্লক হয়েছে। অনুগ্রহ করে সরাসরি ক্রোম ব্রাউজারে নতুন ট্যাবে খুলুন অথবা নিচের ইমেইল ও ইনস্ট্যান্ট OTP দিয়ে লগইন করুন।');
-      } else if (err?.code === 'auth/popup-closed-by-user') {
+        setError('ব্রাউজারের থার্ড-পার্টি কুকি সীমাবদ্ধতার কারণে গুগল পপ-আপ বন্ধ হয়েছে। দয়া করে নিচের ইমেইল ও ইনস্ট্যান্ট OTP লগইন অপশনটি ব্যবহার করুন।');
+      } else if (err?.code === 'auth/popup-closed-by-user' || msg.includes('closed')) {
         setError('Google Sign-in window was closed.');
       } else {
         setError(err.message || 'Failed to sign in with Google');
