@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle, Dices, Percent } from 'lucide-react';
+import { Users, ArrowDownCircle, ArrowUpCircle, Wallet, ShieldAlert, CheckCircle2, XCircle, Eye, Search, Plus, Trophy, DollarSign, Activity, FileText, Ban, UserCheck, RefreshCw, Sparkles, Image as ImageIcon, Award, Crown, Gift, Mail, Phone, Calendar, Menu, X, Sun, Moon, Lock, KeyRound, Smartphone, ShieldCheck, Clock, Filter, Copy, Check, QrCode, TrendingUp, Bell, AlertTriangle, Dices, Percent, Layers, Flame } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts';
 import { DepositRequest, WithdrawalRequest, LotteryDraw, PurchasedTicket, User, WalletTransaction, BannerSlide } from '../../types';
 import { soundFx } from '../../utils/audio';
@@ -17,6 +17,9 @@ import { AdminWheelManager } from './AdminWheelManager';
 import { AdminBonusManager } from './AdminBonusManager';
 import { AdminRouletteManager } from './AdminRouletteManager';
 import { AdminVipManager } from './AdminVipManager';
+import { AdminAndarBaharManager } from './AdminAndarBaharManager';
+import { AdminDragonTigerManager } from './AdminDragonTigerManager';
+import { AdminLiveGameRTPManager } from './AdminLiveGameRTPManager';
 import { PaginationBar } from '../PaginationBar';
 
 interface AdminDashboardProps {
@@ -79,7 +82,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     action();
   };
-  const [adminTab, setAdminTab] = useState<'overview' | 'vip' | 'bonus' | 'scheduler' | 'payment' | 'wheel' | 'roulette' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'vip' | 'bonus' | 'live_rtp' | 'roulette' | 'andar_bahar' | 'dragon_tiger' | 'scheduler' | 'payment' | 'wheel' | 'supercar' | 'supercar_analytics' | 'deposits' | 'withdrawals' | 'draws' | 'tickets' | 'users' | 'wallet' | 'audit' | 'broadcast' | 'smtp' | 'banners'>('overview');
   const [supercarConfig, setSupercarConfig] = useState<any>({
     enabled: true,
     ticketPrice: 100,
@@ -575,9 +578,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Dashboard', icon: Activity },
+            { id: 'live_rtp', label: 'Live Games RTP & Edge', icon: Percent },
             { id: 'vip', label: 'VIP & Loyalty Club', icon: Crown },
             { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift },
-            { id: 'roulette', label: 'Roulette RTP & Edge', icon: Percent },
+            { id: 'roulette', label: 'Roulette Manager', icon: Dices },
+            { id: 'andar_bahar', label: 'Andar Bahar Casino', icon: Layers },
+            { id: 'dragon_tiger', label: 'Dragon Tiger Casino', icon: Flame },
             { id: 'scheduler', label: 'Result Scheduler', icon: Clock },
             { id: 'payment', label: 'Payment Settings', icon: QrCode },
             { id: 'wheel', label: 'Lucky Wheel', icon: Dices },
@@ -651,9 +657,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="space-y-1 font-mono">
                 {[
                   { id: 'overview', label: 'Dashboard & Charts', icon: Activity, desc: 'Revenue analytics & quick metrics' },
+                  { id: 'live_rtp', label: 'Live Games RTP & Edge Controller', icon: Percent, desc: 'Collection game_settings: Roulette, Andar Bahar, Dragon Tiger' },
                   { id: 'vip', label: 'VIP & Loyalty Club Manager', icon: Crown, desc: 'Toggle VIP status, points & perks' },
                   { id: 'bonus', label: 'Bonus & Game Permissions', icon: Gift, desc: 'Control which games use bonus balance' },
-                  { id: 'roulette', label: 'Live Roulette RTP & House Edge', icon: Percent, desc: 'Set manual RTP %, House Edge & target numbers' },
+                  { id: 'roulette', label: 'Live Roulette Manager', icon: Dices, desc: 'Set manual RTP %, House Edge & target numbers' },
+                  { id: 'andar_bahar', label: 'Andar Bahar Casino Controller', icon: Layers, desc: 'Live card dealer, RTP modes & force winner' },
+                  { id: 'dragon_tiger', label: 'Dragon Tiger Casino Controller', icon: Flame, desc: 'Live Asian 2-card dealer, multipliers & forced winner' },
                   { id: 'scheduler', label: 'Universal Lottery Scheduler', icon: Clock, desc: 'Auto draw slots, timers & preset winners' },
                   { id: 'payment', label: 'Payment Settings', icon: QrCode, desc: 'Configure QR, UPI ID & Deposit limits' },
                   { id: 'wheel', label: 'Lucky Wheel Manager', icon: Dices, desc: 'Configure spin segments, probabilities & limits' },
@@ -1033,10 +1042,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* DEDICATED LIVE GAMES RTP & HOUSE EDGE MASTER CONTROLLER (game_settings) */}
+      {adminTab === 'live_rtp' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminLiveGameRTPManager />
+        </div>
+      )}
+
       {/* LIVE ROULETTE RTP & HOUSE EDGE MANAGER */}
       {adminTab === 'roulette' && (
         <div className="animate-in fade-in duration-200">
           <AdminRouletteManager />
+        </div>
+      )}
+
+      {/* ANDAR BAHAR CASINO CONTROLLER */}
+      {adminTab === 'andar_bahar' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminAndarBaharManager />
+        </div>
+      )}
+
+      {/* DRAGON TIGER CASINO CONTROLLER */}
+      {adminTab === 'dragon_tiger' && (
+        <div className="animate-in fade-in duration-200">
+          <AdminDragonTigerManager />
         </div>
       )}
 

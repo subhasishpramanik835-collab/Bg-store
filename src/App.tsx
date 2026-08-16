@@ -24,6 +24,9 @@ import { SettingsView } from './components/SettingsView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AuthScreen } from './components/AuthScreen';
 import { LiveRoulette } from './components/LiveRoulette';
+import { LightningRouletteGame } from './components/LightningRouletteGame';
+import { AndarBaharGame } from './components/AndarBaharGame';
+import { DragonTigerGame } from './components/DragonTigerGame';
 import { LotterySection } from './components/LotterySection';
 import { WithdrawalSection } from './components/WithdrawalSection';
 import { SuperCarDrawSection } from './components/SuperCarDrawSection';
@@ -32,6 +35,10 @@ import { PromotionalSlider } from './components/PromotionalSlider';
 import { SuperCarWinToast, SuperCarWinToastData } from './components/SuperCarWinToast';
 import { SuperCarConfig, SuperCarDrawIssue, SuperCarColor, BonusBalanceRules } from './types';
 import { DEFAULT_SUPERCAR_CONFIG, getSuperCarInfo, getCurrentSuperCarSchedule, getSlotFromTicket, getWinningCarForSlot, sortChronologicalNewestFirst } from './utils/supercar';
+import dragonTigerBannerImg from './assets/images/banner_dragon_tiger_1786806363496.jpg';
+import andarBaharBannerImg from './assets/images/banner_andar_bahar_1786806380441.jpg';
+import rouletteBannerImg from './assets/images/banner_roulette_1786806396481.jpg';
+import lightningBannerImg from './assets/images/banner_lightning_roulette_1786807743295.jpg';
 import { auth, db, testConnection } from './firebase';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, getDocs, setDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
@@ -76,6 +83,9 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isLuckyWheelOpen, setIsLuckyWheelOpen] = useState<boolean>(false);
   const [isLiveRouletteOpen, setIsLiveRouletteOpen] = useState<boolean>(false);
+  const [isLightningRouletteOpen, setIsLightningRouletteOpen] = useState<boolean>(false);
+  const [isAndarBaharOpen, setIsAndarBaharOpen] = useState<boolean>(false);
+  const [isDragonTigerOpen, setIsDragonTigerOpen] = useState<boolean>(false);
   const [buyTicketDraw, setBuyTicketDraw] = useState<LotteryDraw | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
@@ -606,6 +616,12 @@ export default function App() {
       setIsLuckyWheelOpen(true);
     } else if (actionType === 'roulette') {
       setIsLiveRouletteOpen(true);
+    } else if (actionType === 'lightning_roulette') {
+      setIsLightningRouletteOpen(true);
+    } else if (actionType === 'andar_bahar') {
+      setIsAndarBaharOpen(true);
+    } else if (actionType === 'dragon_tiger') {
+      setIsDragonTigerOpen(true);
     } else if (actionType === 'withdrawal') {
       setActiveTab('withdrawal');
     } else if (actionType === 'custom_url' && targetUrl) {
@@ -1841,6 +1857,216 @@ export default function App() {
                   onAction={handleBannerSliderAction}
                 />
 
+                {/* LIVE CASINO SHOWCASE HUB (HD Graphic Banners) */}
+                <div className="p-3 sm:p-5 rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-950 to-amber-950/30 border border-amber-500/30 shadow-2xl space-y-3.5 font-mono relative overflow-hidden">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shadow-md">
+                        <Sparkles className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                          <span>LIVE CASINO ARENA</span>
+                          <span className="bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md animate-pulse">
+                            REAL-TIME
+                          </span>
+                        </h3>
+                        <p className="text-[10px] text-amber-300/80">Play HD Live Dealer Games with Instant Real-Time Payouts</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-0.5">
+                    {/* Evolution Lightning Roulette HD Visual Banner Card */}
+                    <div 
+                      onClick={() => {
+                        soundFx.playClick();
+                        setIsLightningRouletteOpen(true);
+                      }}
+                      className="group relative rounded-2xl border border-amber-400/70 hover:border-yellow-300 bg-slate-950 shadow-2xl hover:shadow-[0_0_25px_rgba(245,158,11,0.35)] transition-all duration-300 hover:scale-[1.02] cursor-pointer overflow-hidden flex flex-col justify-between min-h-[160px] sm:min-h-[180px]"
+                    >
+                      {/* HD Background Image */}
+                      <img 
+                        src={lightningBannerImg} 
+                        alt="Evolution Lightning Roulette Live Casino" 
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-108 group-hover:brightness-115 transition-all duration-700 ease-out"
+                      />
+                      {/* Vignette Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/30 pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-amber-950/60 via-transparent to-black/40 pointer-events-none" />
+
+                      {/* Top Badges */}
+                      <div className="relative z-10 p-3 flex items-start justify-between">
+                        <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl border border-amber-400/50 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                          <span className="text-[10px] font-black text-amber-300 uppercase tracking-wider">EVOLUTION</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 backdrop-blur-md border border-amber-300 rounded-lg text-[9px] font-black shadow-md animate-pulse">
+                          500X MULTIPLIER
+                        </span>
+                      </div>
+
+                      {/* Bottom Banner Info & CTA */}
+                      <div className="relative z-10 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] flex items-center gap-1">
+                              <span>Lightning Roulette</span>
+                            </h4>
+                            <p className="text-[10px] text-amber-300 font-semibold drop-shadow">Min: ₹10 • 50x-500x Lucky Strikes</p>
+                          </div>
+                          <div className="px-3 py-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[11px] font-black rounded-xl border border-amber-300 shadow-lg flex items-center gap-1 group-hover:shadow-amber-500/50 group-hover:scale-105 transition-all">
+                            <span>PLAY</span>
+                            <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dragon Tiger HD Visual Banner Card */}
+                    <div 
+                      onClick={() => {
+                        soundFx.playClick();
+                        setIsDragonTigerOpen(true);
+                      }}
+                      className="group relative rounded-2xl border border-red-500/40 hover:border-red-400 bg-slate-950 shadow-xl hover:shadow-red-500/20 transition-all duration-300 hover:scale-[1.02] cursor-pointer overflow-hidden flex flex-col justify-between min-h-[160px] sm:min-h-[180px]"
+                    >
+                      {/* HD Background Image */}
+                      <img 
+                        src={dragonTigerBannerImg} 
+                        alt="Dragon Tiger Live Casino" 
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-108 group-hover:brightness-110 transition-all duration-700 ease-out"
+                      />
+                      {/* Vignette Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/30 pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-transparent to-black/40 pointer-events-none" />
+
+                      {/* Top Badges */}
+                      <div className="relative z-10 p-3 flex items-start justify-between">
+                        <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl border border-red-500/40 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                          <span className="text-[10px] font-black text-white uppercase tracking-wider">LIVE HD</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-red-600/80 text-white backdrop-blur-md border border-red-400/50 rounded-lg text-[9px] font-black shadow-md">
+                          2.0X & 9X TIE
+                        </span>
+                      </div>
+
+                      {/* Bottom Banner Info & CTA */}
+                      <div className="relative z-10 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                              Dragon Tiger
+                            </h4>
+                            <p className="text-[10px] text-red-300 font-semibold drop-shadow">Min Bet: ₹10 • Instant Payout</p>
+                          </div>
+                          <div className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white text-[11px] font-black rounded-xl border border-red-400/60 shadow-lg flex items-center gap-1 group-hover:shadow-red-500/50 group-hover:scale-105 transition-all">
+                            <span>PLAY</span>
+                            <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Andar Bahar HD Visual Banner Card */}
+                    <div 
+                      onClick={() => {
+                        soundFx.playClick();
+                        setIsAndarBaharOpen(true);
+                      }}
+                      className="group relative rounded-2xl border border-emerald-500/40 hover:border-emerald-400 bg-slate-950 shadow-xl hover:shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] cursor-pointer overflow-hidden flex flex-col justify-between min-h-[160px] sm:min-h-[180px]"
+                    >
+                      {/* HD Background Image */}
+                      <img 
+                        src={andarBaharBannerImg} 
+                        alt="Andar Bahar Live Casino" 
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-108 group-hover:brightness-110 transition-all duration-700 ease-out"
+                      />
+                      {/* Vignette Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/30 pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/60 via-transparent to-black/40 pointer-events-none" />
+
+                      {/* Top Badges */}
+                      <div className="relative z-10 p-3 flex items-start justify-between">
+                        <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl border border-emerald-500/40 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                          <span className="text-[10px] font-black text-white uppercase tracking-wider">FAIR RNG</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-emerald-600/80 text-white backdrop-blur-md border border-emerald-400/50 rounded-lg text-[9px] font-black shadow-md">
+                          2.0X PAYOUT
+                        </span>
+                      </div>
+
+                      {/* Bottom Banner Info & CTA */}
+                      <div className="relative z-10 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                              Andar Bahar
+                            </h4>
+                            <p className="text-[10px] text-emerald-300 font-semibold drop-shadow">Min Bet: ₹10 • Joker Match</p>
+                          </div>
+                          <div className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[11px] font-black rounded-xl border border-emerald-400/60 shadow-lg flex items-center gap-1 group-hover:shadow-emerald-500/50 group-hover:scale-105 transition-all">
+                            <span>PLAY</span>
+                            <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* European Roulette HD Visual Banner Card */}
+                    <div 
+                      onClick={() => {
+                        soundFx.playClick();
+                        setIsLiveRouletteOpen(true);
+                      }}
+                      className="group relative rounded-2xl border border-amber-500/40 hover:border-amber-400 bg-slate-950 shadow-xl hover:shadow-amber-500/20 transition-all duration-300 hover:scale-[1.02] cursor-pointer overflow-hidden flex flex-col justify-between min-h-[160px] sm:min-h-[180px]"
+                    >
+                      {/* HD Background Image */}
+                      <img 
+                        src={rouletteBannerImg} 
+                        alt="Live Roulette Casino" 
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-108 group-hover:brightness-110 transition-all duration-700 ease-out"
+                      />
+                      {/* Vignette Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-black/30 pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-amber-950/60 via-transparent to-black/40 pointer-events-none" />
+
+                      {/* Top Badges */}
+                      <div className="relative z-10 p-3 flex items-start justify-between">
+                        <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl border border-amber-500/40 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                          <span className="text-[10px] font-black text-white uppercase tracking-wider">3D WHEEL</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-amber-500 text-slate-950 backdrop-blur-md border border-amber-400 rounded-lg text-[9px] font-black shadow-md">
+                          36X JACKPOT
+                        </span>
+                      </div>
+
+                      {/* Bottom Banner Info & CTA */}
+                      <div className="relative z-10 p-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                              Live Roulette
+                            </h4>
+                            <p className="text-[10px] text-amber-300 font-semibold drop-shadow">Min Bet: ₹10 • 97.3% RTP</p>
+                          </div>
+                          <div className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 text-[11px] font-black rounded-xl border border-amber-300 shadow-lg flex items-center gap-1 group-hover:shadow-amber-500/50 group-hover:scale-105 transition-all">
+                            <span>PLAY</span>
+                            <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Three Super Car Draw Live Section */}
                 {isSuperCarEnabled && (
                   <SuperCarDrawSection
@@ -1956,15 +2182,67 @@ export default function App() {
         }}
         activeTicketsCount={activeTicketsCount}
         onOpenRoulette={() => setIsLiveRouletteOpen(true)}
+        onOpenLightningRoulette={() => setIsLightningRouletteOpen(true)}
+        onOpenAndarBahar={() => setIsAndarBaharOpen(true)}
+        onOpenDragonTiger={() => setIsDragonTigerOpen(true)}
       />
+
+      {/* FULLSCREEN IMMERSIVE EVOLUTION LIGHTNING ROULETTE CASINO MODULE */}
+      {isLightningRouletteOpen && (
+        <LightningRouletteGame
+          user={user}
+          onUpdateBalance={(newBalance) => {
+            setUser((prev) => {
+              const updated = { ...prev, balance: newBalance };
+              if (prev?.id) persistUserBalance(prev.id, newBalance, prev.bonusBalance, prev.email);
+              return updated;
+            });
+          }}
+          onAddTransaction={(tx) => {
+            setTransactions((prev) => [tx, ...prev]);
+            persistTransaction(tx);
+          }}
+          onClose={() => setIsLightningRouletteOpen(false)}
+          onOpenDeposit={() => {
+            setIsLightningRouletteOpen(false);
+            setIsDepositOpen(true);
+          }}
+        />
+      )}
+
+      {/* FULLSCREEN IMMERSIVE LIVE DRAGON TIGER CASINO MODULE */}
+      {isDragonTigerOpen && (
+        <DragonTigerGame
+          user={user}
+          onUpdateBalance={(newBalance) => {
+            setUser((prev) => {
+              const updated = { ...prev, balance: newBalance };
+              if (prev?.id) persistUserBalance(prev.id, newBalance, prev.bonusBalance, prev.email);
+              return updated;
+            });
+          }}
+          onAddTransaction={(tx) => {
+            setTransactions((prev) => [tx, ...prev]);
+            persistTransaction(tx);
+          }}
+          onClose={() => setIsDragonTigerOpen(false)}
+          onOpenDeposit={() => {
+            setIsDragonTigerOpen(false);
+            setIsDepositOpen(true);
+          }}
+        />
+      )}
 
       {/* FULLSCREEN IMMERSIVE LIVE ROULETTE CASINO MODULE */}
       {isLiveRouletteOpen && (
         <LiveRoulette
           user={user}
           onUpdateBalance={(newBalance) => {
-            setUser((prev) => ({ ...prev, balance: newBalance }));
-            if (user?.id) persistUserBalance(user.id, newBalance);
+            setUser((prev) => {
+              const updated = { ...prev, balance: newBalance };
+              if (prev?.id) persistUserBalance(prev.id, newBalance, prev.bonusBalance, prev.email);
+              return updated;
+            });
           }}
           onAddTransaction={(tx) => {
             setTransactions((prev) => [tx, ...prev]);
@@ -1973,6 +2251,29 @@ export default function App() {
           onClose={() => setIsLiveRouletteOpen(false)}
           onOpenDeposit={() => {
             setIsLiveRouletteOpen(false);
+            setIsDepositOpen(true);
+          }}
+        />
+      )}
+
+      {/* FULLSCREEN IMMERSIVE LIVE ANDAR BAHAR CASINO MODULE */}
+      {isAndarBaharOpen && (
+        <AndarBaharGame
+          user={user}
+          onUpdateBalance={(newBalance) => {
+            setUser((prev) => {
+              const updated = { ...prev, balance: newBalance };
+              if (prev?.id) persistUserBalance(prev.id, newBalance, prev.bonusBalance, prev.email);
+              return updated;
+            });
+          }}
+          onAddTransaction={(tx) => {
+            setTransactions((prev) => [tx, ...prev]);
+            persistTransaction(tx);
+          }}
+          onClose={() => setIsAndarBaharOpen(false)}
+          onOpenDeposit={() => {
+            setIsAndarBaharOpen(false);
             setIsDepositOpen(true);
           }}
         />

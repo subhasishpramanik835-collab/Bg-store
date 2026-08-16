@@ -80,7 +80,7 @@ export interface BonusBalanceRules {
 export interface WalletTransaction {
   id: string;
   userId: string;
-  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'vip_bonus' | 'loss' | 'win' | 'ticket_win' | 'ticket_loss';
+  type: 'deposit' | 'withdrawal' | 'ticket_buy' | 'win_payout' | 'wheel_bonus' | 'admin_bonus' | 'admin_deduction' | 'roulette_bet' | 'roulette_win' | 'lightning_roulette_bet' | 'lightning_roulette_win' | 'andar_bahar_bet' | 'andar_bahar_win' | 'dragon_tiger_bet' | 'dragon_tiger_win' | 'vip_bonus' | 'loss' | 'win' | 'ticket_win' | 'ticket_loss';
   amount: number;
   description: string;
   status: 'completed' | 'pending' | 'failed' | 'rejected';
@@ -98,7 +98,7 @@ export interface BannerSlide {
   title: string;
   subtitle?: string;
   imageUrl: string;
-  actionType: 'deposit' | 'supercar' | 'lottery' | 'wheel' | 'roulette' | 'withdrawal' | 'custom_url';
+  actionType: 'deposit' | 'supercar' | 'lottery' | 'wheel' | 'roulette' | 'lightning_roulette' | 'andar_bahar' | 'dragon_tiger' | 'withdrawal' | 'custom_url';
   targetUrl?: string;
   badgeText?: string;
   bgGradient?: string;
@@ -330,3 +330,198 @@ export interface RouletteConfig {
   lastUpdated?: string;
   updatedBy?: string;
 }
+
+export type CardSuit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
+export type CardRank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K';
+
+export interface PlayingCard {
+  id: string;
+  suit: CardSuit;
+  rank: CardRank;
+  value: number; // 1 to 13 (A=1, 2=2, ..., K=13)
+  color: 'red' | 'black';
+}
+
+export type AndarBaharSide = 'andar' | 'bahar';
+
+export interface AndarBaharRound {
+  id: string; // e.g. "AB-20260814-1001"
+  roundNumber: number;
+  jokerCard: PlayingCard;
+  andarCards: PlayingCard[];
+  baharCards: PlayingCard[];
+  winningSide?: AndarBaharSide;
+  winningCard?: PlayingCard;
+  totalCardsDealt: number;
+  status: 'betting' | 'dealing' | 'completed' | 'cancelled';
+  startTime: number;
+  endTime?: number;
+  totalBetsAndar: number;
+  totalBetsBahar: number;
+  totalPayout: number;
+  createdAt: string;
+}
+
+export interface AndarBaharBet {
+  id: string;
+  roundId: string;
+  userId: string;
+  userName: string;
+  userPhone?: string;
+  side: AndarBaharSide;
+  amount: number;
+  payoutMultiplier: number;
+  wonAmount?: number;
+  status: 'pending' | 'won' | 'lost';
+  createdAt: string;
+  timestamp: number;
+}
+
+export type AndarBaharRtpMode = 'fair_rng' | 'house_protect' | 'manual_force_winner';
+
+export interface AndarBaharConfig {
+  isEnabled: boolean;
+  minBet: number;
+  maxBet: number;
+  bettingDurationSeconds: number; // e.g. 15 to 30
+  dealingSpeedMs: number; // e.g. 400 to 1000
+  andarMultiplier: number; // e.g. 1.95 (0.95:1)
+  baharMultiplier: number; // e.g. 1.95 or 2.0
+  rtpMode: AndarBaharRtpMode;
+  manualForceWinner?: AndarBaharSide | 'random';
+  manualJokerRank?: CardRank | 'random';
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type DragonTigerSide = 'dragon' | 'tiger' | 'tie';
+
+export interface DragonTigerRound {
+  id: string; // e.g. "DT-20260814-1001"
+  roundNumber: number;
+  dragonCard?: PlayingCard;
+  tigerCard?: PlayingCard;
+  winningSide?: DragonTigerSide;
+  status: 'betting' | 'dealing' | 'completed' | 'cancelled';
+  startTime: number;
+  endTime?: number;
+  totalBetsDragon: number;
+  totalBetsTiger: number;
+  totalBetsTie: number;
+  totalPayout: number;
+  createdAt: string;
+}
+
+export interface DragonTigerBet {
+  id: string;
+  roundId: string;
+  userId: string;
+  userName: string;
+  userPhone?: string;
+  side: DragonTigerSide;
+  amount: number;
+  payoutMultiplier: number;
+  wonAmount?: number;
+  status: 'pending' | 'won' | 'lost' | 'tie_push';
+  createdAt: string;
+  timestamp: number;
+}
+
+export type DragonTigerRtpMode = 'fair_rng' | 'house_protect' | 'manual_force_winner';
+
+export interface DragonTigerConfig {
+  isEnabled: boolean;
+  minBet: number;
+  maxBet: number;
+  bettingDurationSeconds: number; // e.g. 15 to 30
+  dragonMultiplier: number; // e.g. 2.0 (1:1)
+  tigerMultiplier: number; // e.g. 2.0 (1:1)
+  tieMultiplier: number; // e.g. 9.0 (8:1)
+  rtpPercentage?: number;
+  houseEdgePercentage?: number;
+  rtpMode: DragonTigerRtpMode;
+  manualForceWinner?: DragonTigerSide | 'random';
+  manualDragonRank?: CardRank | 'random';
+  manualTigerRank?: CardRank | 'random';
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface LiveGameRtpSettings {
+  id: 'roulette' | 'lightning_roulette' | 'andar_bahar' | 'dragon_tiger' | 'global';
+  gameName: string;
+  rtpPercentage: number; // e.g. 97.3, 96.5, 96.8
+  houseEdgePercentage: number; // 100 - rtpPercentage or custom set
+  rtpMode: 'fair_rng' | 'house_protect' | 'high_house_edge' | 'custom_rtp' | 'manual_force';
+  manualForceTarget?: string;
+  manualForceActive?: boolean;
+  minBet: number;
+  maxBet: number;
+  isEnabled: boolean;
+  targetProfitMargin?: number;
+  multiplierPrimary?: number;
+  multiplierSecondary?: number;
+  multiplierSpecial?: number;
+  notes?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type LightningMultiplier = 50 | 100 | 150 | 200 | 250 | 300 | 400 | 500;
+
+export interface LightningLuckyNumber {
+  number: number;
+  multiplier: LightningMultiplier;
+  color: 'red' | 'black' | 'green';
+}
+
+export type LightningRouletteRtpMode = 'fair_rng' | 'house_protect' | 'manual_force' | 'high_multiplier_boost';
+
+export interface LightningRouletteConfig {
+  isEnabled: boolean;
+  minBet: number;
+  maxBet: number;
+  bettingDurationSeconds: number; // e.g. 15 to 25
+  straightUpPayoutMultiplier: number; // Standard: 29:1 or 30x (standard non-struck is 30x in lightning)
+  rtpPercentage: number; // e.g. 97.3
+  houseEdgePercentage: number; // 2.7
+  rtpMode: LightningRouletteRtpMode;
+  manualForceNumber?: number | 'random';
+  manualForceMultiplier?: LightningMultiplier | 'random';
+  luckyNumbersCountMin: number; // 1
+  luckyNumbersCountMax: number; // 5
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface LightningRouletteRound {
+  id: string; // e.g. "LR-20260815-1001"
+  roundNumber: number;
+  winningNumber: number;
+  luckyNumbers: LightningLuckyNumber[];
+  status: 'betting' | 'lightning_strike' | 'spinning' | 'completed' | 'cancelled';
+  startTime: number;
+  endTime?: number;
+  totalBetsPlaced: number;
+  totalPayout: number;
+  createdAt: string;
+}
+
+export interface LightningRouletteBet {
+  id: string;
+  roundId: string;
+  userId: string;
+  userName: string;
+  userPhone?: string;
+  betType: string;
+  targetValue: any;
+  amount: number;
+  payoutMultiplier: number;
+  wonAmount?: number;
+  status: 'pending' | 'won' | 'lost';
+  isLightningHit?: boolean;
+  createdAt: string;
+  timestamp: number;
+}
+
+

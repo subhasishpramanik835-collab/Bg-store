@@ -289,15 +289,20 @@ export const WalletLedger: React.FC<WalletLedgerProps> = ({
           bgColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
           sign: '+'
         };
+      case 'roulette_bet':
+      case 'andar_bahar_bet':
+      case 'dragon_tiger_bet':
         return {
-          label: 'Roulette Bet',
+          label: type === 'dragon_tiger_bet' ? 'Dragon Tiger Bet' : type === 'andar_bahar_bet' ? 'Andar Bahar Bet' : 'Roulette Bet',
           icon: <TrendingDown className="w-4 h-4 text-rose-400" />,
           bgColor: 'bg-rose-500/10 border-rose-500/30 text-rose-300',
           sign: '-'
         };
       case 'roulette_win':
+      case 'andar_bahar_win':
+      case 'dragon_tiger_win':
         return {
-          label: 'Roulette Win Payout',
+          label: type === 'dragon_tiger_win' ? 'Dragon Tiger Win' : type === 'andar_bahar_win' ? 'Andar Bahar Win' : 'Roulette Win Payout',
           icon: <Trophy className="w-4 h-4 text-yellow-400" />,
           bgColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
           sign: '+'

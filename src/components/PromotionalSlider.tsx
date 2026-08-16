@@ -13,6 +13,30 @@ interface PromotionalSliderProps {
 export const DEFAULT_BANNER_SLIDES: BannerSlide[] = [
   // 1. Super Car Slides
   {
+    id: 'default-dragon-tiger-1',
+    category: 'supercar',
+    title: '🐉 Live Dragon Tiger Asian Classic',
+    subtitle: 'Bet Dragon or Tiger with 2.0x instant payout and 9.0x on Tie! Real dealer action.',
+    imageUrl: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&w=1200&q=80',
+    actionType: 'dragon_tiger',
+    badgeText: 'HOT CASINO',
+    bgGradient: 'from-red-950/90 via-slate-950/90 to-amber-950',
+    active: true,
+    order: 1
+  },
+  {
+    id: 'default-andar-bahar-1',
+    category: 'supercar',
+    title: '🎴 Live Andar Bahar HD Card Casino',
+    subtitle: 'Match the Joker Card on Andar or Bahar for instant 2.0x real cash payouts!',
+    imageUrl: 'https://images.unsplash.com/photo-1511193311914-0346f16efe90?auto=format&fit=crop&w=1200&q=80',
+    actionType: 'andar_bahar',
+    badgeText: 'HOT CASINO',
+    bgGradient: 'from-emerald-900/90 via-slate-950/90 to-amber-950',
+    active: true,
+    order: 2
+  },
+  {
     id: 'default-supercar-1',
     category: 'supercar',
     title: '🏎️ 3 Super Car Live VIP Jackpot',
@@ -22,7 +46,7 @@ export const DEFAULT_BANNER_SLIDES: BannerSlide[] = [
     badgeText: '2.8x MULTIPLIER',
     bgGradient: 'from-amber-600/90 via-red-900/80 to-slate-950',
     active: true,
-    order: 1
+    order: 2
   },
   {
     id: 'default-supercar-2',
@@ -193,7 +217,8 @@ export const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
       case 'supercar': return 'Play Super Car';
       case 'lottery': return 'Buy Lottery Ticket';
       case 'wheel': return 'Spin Wheel';
-      case 'roulette': return 'Play Casino';
+      case 'roulette': return 'Play Roulette';
+      case 'andar_bahar': return 'Play Andar Bahar';
       case 'withdrawal': return 'Withdraw Cash';
       default: return 'Claim Offer';
     }

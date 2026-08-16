@@ -125,7 +125,29 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
   rouletteConfigRef.current = rouletteConfig;
 
   useEffect(() => {
-    // 1. Listen to Firestore
+    // 1. Listen to Firestore collection `game_settings` (primary real-time source)
+    const unsubGameSettings = onSnapshot(doc(db, 'game_settings', 'roulette'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        setRouletteConfig((prev) => {
+          const next: RouletteConfig = {
+            ...prev,
+            rtpPercentage: typeof data.rtpPercentage === 'number' ? data.rtpPercentage : prev.rtpPercentage,
+            houseEdgePercentage: typeof data.houseEdgePercentage === 'number' ? data.houseEdgePercentage : prev.houseEdgePercentage,
+            rtpMode: data.rtpMode === 'fair_rng' ? 'european_standard' : data.rtpMode === 'house_protect' ? 'house_protection' : (data.rtpMode || prev.rtpMode),
+            isRouletteEnabled: data.isEnabled !== undefined ? data.isEnabled : prev.isRouletteEnabled,
+            minBet: data.minBet !== undefined ? data.minBet : prev.minBet,
+            maxBet: data.maxBet !== undefined ? data.maxBet : prev.maxBet,
+          };
+          try {
+            localStorage.setItem('bg_roulette_config', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+      }
+    }, (err) => console.warn('LiveRoulette game_settings sync error:', err.message));
+
+    // 2. Legacy fallback listener
     const unsub = onSnapshot(doc(db, 'roulette_config', 'main'), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Partial<RouletteConfig>;
@@ -142,7 +164,7 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
       }
     }, (err) => console.warn('LiveRoulette config sync error:', err.message));
 
-    // 2. Listen to instant local window event
+    // 3. Listen to instant local window event
     const handleLocalConfigChange = (e: any) => {
       if (e.detail) {
         setRouletteConfig((prev) => ({
@@ -153,7 +175,7 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
     };
     window.addEventListener('bg_roulette_config_change', handleLocalConfigChange);
 
-    // 3. Listen to storage changes across tabs
+    // 4. Listen to storage changes across tabs
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'bg_roulette_config' && e.newValue) {
         try {
@@ -165,6 +187,7 @@ export const LiveRoulette: React.FC<LiveRouletteProps> = ({
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
+      unsubGameSettings();
       unsub();
       window.removeEventListener('bg_roulette_config_change', handleLocalConfigChange);
       window.removeEventListener('storage', handleStorageChange);

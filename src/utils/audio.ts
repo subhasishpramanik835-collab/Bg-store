@@ -428,6 +428,442 @@ class SoundManager {
       console.warn('Audio play error', e);
     }
   }
+
+  public playCardDeal() {
+    this.triggerHaptic(12);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      
+      // Card friction whoosh (filtered white noise burst)
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.07);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, now);
+      filter.frequency.exponentialRampToValueAtTime(3200, now + 0.06);
+      filter.Q.setValueAtTime(3, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      noise.start(now);
+      noise.stop(now + 0.07);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playCardFlip() {
+    this.triggerHaptic(18);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Crisp card slap/snap
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(450, now);
+      osc.frequency.exponentialRampToValueAtTime(150, now + 0.04);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.04);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playChipPlace() {
+    this.triggerHaptic(15);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Ceramic casino chip click (dual high resonance tones)
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(2400, now);
+      osc1.frequency.exponentialRampToValueAtTime(1800, now + 0.035);
+      osc2.frequency.setValueAtTime(3600, now);
+      osc2.frequency.exponentialRampToValueAtTime(2800, now + 0.035);
+
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.035);
+      osc2.stop(now + 0.035);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playBetsClosed() {
+    this.triggerHaptic([40, 80, 40]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Low resonant casino gong / bell
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'triangle';
+      osc1.frequency.setValueAtTime(440, now); // A4
+      osc2.frequency.setValueAtTime(880, now); // A5
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.8);
+      osc2.stop(now + 0.8);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playLossSound() {
+    this.triggerHaptic([30, 60]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(180, now + 0.35);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playDragonRoar() {
+    this.triggerHaptic([60, 40, 80]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Deep, mystical Dragon roar sound with brass frequency sweeps
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'triangle';
+
+      osc1.frequency.setValueAtTime(120, now);
+      osc1.frequency.exponentialRampToValueAtTime(280, now + 0.25);
+      osc1.frequency.exponentialRampToValueAtTime(80, now + 0.7);
+
+      osc2.frequency.setValueAtTime(90, now);
+      osc2.frequency.exponentialRampToValueAtTime(180, now + 0.25);
+      osc2.frequency.exponentialRampToValueAtTime(60, now + 0.7);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.75);
+      osc2.stop(now + 0.75);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playTigerRoar() {
+    this.triggerHaptic([50, 40, 90]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Fierce predatory growl / strike tone
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'sine';
+
+      osc1.frequency.setValueAtTime(220, now);
+      osc1.frequency.exponentialRampToValueAtTime(140, now + 0.3);
+      osc1.frequency.exponentialRampToValueAtTime(70, now + 0.65);
+
+      osc2.frequency.setValueAtTime(340, now);
+      osc2.frequency.exponentialRampToValueAtTime(200, now + 0.25);
+      osc2.frequency.exponentialRampToValueAtTime(80, now + 0.65);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.7);
+      osc2.stop(now + 0.7);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playChipSelect() {
+    this.playClick();
+  }
+
+  public playChipPlacement() {
+    this.playChipPlace();
+  }
+
+  public playWinCoin() {
+    this.playCoin();
+  }
+
+  public playError() {
+    this.triggerHaptic([50, 50]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.setValueAtTime(120, now + 0.08);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playTieGong() {
+    this.triggerHaptic([100, 50, 100]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Resonant harmonized oriental temple bell
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const osc3 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'triangle';
+      osc3.type = 'sine';
+
+      osc1.frequency.setValueAtTime(523.25, now); // C5
+      osc2.frequency.setValueAtTime(659.25, now); // E5
+      osc3.frequency.setValueAtTime(783.99, now); // G5
+
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      osc3.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc3.start(now);
+      osc1.stop(now + 1.2);
+      osc2.stop(now + 1.2);
+      osc3.stop(now + 1.2);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playLightningStrike() {
+    this.triggerHaptic([80, 40, 120, 40, 200]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 1. High frequency electric crackle / spark
+      const sparkOsc = this.ctx.createOscillator();
+      const sparkGain = this.ctx.createGain();
+      sparkOsc.type = 'sawtooth';
+      sparkOsc.frequency.setValueAtTime(1800, now);
+      sparkOsc.frequency.exponentialRampToValueAtTime(120, now + 0.15);
+      sparkGain.gain.setValueAtTime(0.3, now);
+      sparkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      sparkOsc.connect(sparkGain);
+      sparkGain.connect(this.ctx.destination);
+      sparkOsc.start(now);
+      sparkOsc.stop(now + 0.15);
+
+      // 2. Heavy Thunder boom / rumble
+      const thunderOsc1 = this.ctx.createOscillator();
+      const thunderOsc2 = this.ctx.createOscillator();
+      const thunderGain = this.ctx.createGain();
+
+      thunderOsc1.type = 'sawtooth';
+      thunderOsc2.type = 'triangle';
+
+      thunderOsc1.frequency.setValueAtTime(90, now + 0.05);
+      thunderOsc1.frequency.exponentialRampToValueAtTime(35, now + 0.8);
+
+      thunderOsc2.frequency.setValueAtTime(60, now + 0.05);
+      thunderOsc2.frequency.exponentialRampToValueAtTime(25, now + 1.1);
+
+      thunderGain.gain.setValueAtTime(0.35, now + 0.05);
+      thunderGain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+
+      thunderOsc1.connect(thunderGain);
+      thunderOsc2.connect(thunderGain);
+      thunderGain.connect(this.ctx.destination);
+
+      thunderOsc1.start(now + 0.05);
+      thunderOsc2.start(now + 0.05);
+      thunderOsc1.stop(now + 1.1);
+      thunderOsc2.stop(now + 1.1);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playElectricZap() {
+    this.triggerHaptic(30);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.linearRampToValueAtTime(1400, now + 0.04);
+      osc.frequency.linearRampToValueAtTime(200, now + 0.09);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.09);
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+
+  public playMultiplierReveal() {
+    this.triggerHaptic([60, 50, 80]);
+    if (this.isMuted || !this.soundEffectsEnabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Golden electric chord chime
+      const freqs = [440, 554.37, 659.25, 880]; // A major chord with high octave
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.03);
+        gain.gain.setValueAtTime(0.18, now + idx * 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + idx * 0.03);
+        osc.stop(now + 0.6);
+      });
+    } catch (e) {
+      console.warn('Audio play error', e);
+    }
+  }
+  public playBetsClosing() {
+    this.playBetsClosed();
+  }
+
+  public playWheelSpin() {
+    this.playSpinWhoosh();
+  }
+
+  public playBigWin() {
+    this.playLoudWinSound();
+  }
+
+  public playWinSound() {
+    this.playWinFanfare();
+  }
 }
 
 export const soundFx = new SoundManager();
